@@ -5,7 +5,7 @@ pygame.font.init()
 # Make board DONE
 # Solver DONE
 # Generator DONE (kinda)
-# Visualizer DONE (kinda)
+# Visualizer
 # Game
 
 N = 9
@@ -101,21 +101,34 @@ POSX, POSY = 50, 5
 win = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Sudoku")
 FONT = pygame.font.SysFont("comicsans", 50)
+MISTAKEFONT = pygame.font.SysFont("verdana", 30)
+THRESHOLD = 5
 
 class Cell:
     def __init__(self, x, y):
         self.x, self.y = x, y
+        self.selected = False
         self.val = 0
+        self.solving = False
+        self.solid = False
     
     def draw(self, color, bg="white"):
         coord = (POSX + self.x * w, POSY + self.y * h)
-        pygame.draw.rect(win, bg, (coord[0], coord[1], w, h)) # Cell
-        pygame.draw.rect(win, color, (coord[0], coord[1], w, h), 1) # Cell border
+        if self.selected:
+            pygame.draw.rect(win, (153, 255, 255), (coord[0], coord[1], w, h))
+            pygame.draw.rect(win, "blue", (coord[0], coord[1], w, h), 2)
+        elif self.solving:
+            pygame.draw.rect(win, (153,255,204), (coord[0], coord[1], w, h))
+            pygame.draw.rect(win, color, (coord[0], coord[1], w, h), 1)
+        else:
+            pygame.draw.rect(win, bg, (coord[0], coord[1], w, h)) # Cell
+            if self.solid: pygame.draw.rect(win, "grey99", (coord[0], coord[1], w, h))
+            pygame.draw.rect(win, color, (coord[0], coord[1], w, h), 1) # Cell border
         if self.val != 0: 
             v = FONT.render(str(self.val), True, color)
             center = v.get_rect(center=(coord[0] + w//2, coord[1] + h//2))
             win.blit(v, center)
-
+            
 class Sudoku:
     def __init__(self, test=False):
         """Initializes the Sudoku board using Cell objects"""
@@ -127,7 +140,9 @@ class Sudoku:
         for r in range(N):
             for c in range(N):
                 self.board[r][c] = Cell(r, c)
-                if test: self.board[r][c].val = board[r][c]        
+                if test: 
+                    self.board[r][c].val = board[r][c]      
+                    if self.board[r][c].val != 0: self.board[r][c].solid = True  
         
     def draw(self):
         win.fill(("white"))
@@ -138,6 +153,11 @@ class Sudoku:
             border = 6 if i % 9 == 0 else 4 if i % 3 == 0 else 1 # Thicker border around boxes
             pygame.draw.line(win, "black", (POSX, POSY + i * h), (POSX + BOARD_W, POSY + i * h), border) # Horizontal
             pygame.draw.line(win, "black", (POSX + i * w, POSY), (POSX + i * w, POSY + BOARD_H), border) # Vertical
+        if mistakes:
+            if mistakes > THRESHOLD: x = MISTAKEFONT.render("Game over! Solving...", True, (0, 190, 200))
+            else: 
+                x = MISTAKEFONT.render("X"*mistakes, True, "red")
+            win.blit(x, (50, HEIGHT-60))
         pygame.display.update()
 
     def valid(self):
@@ -153,7 +173,7 @@ class Sudoku:
                 cols.setdefault(c, set()).add(v)
                 boxes.setdefault(i, set()).add(v)
         return True
-    
+
     def solved(self):
         for r in range(N):
             for c in range(N):
@@ -165,16 +185,18 @@ class Sudoku:
         rows, cols, boxes = {}, {}, {}
         for r in range(N):
             for c in range(N): # Early saving of current cells, O(n^2) time
+                if self.board[r][c].val != 0 and not self.board[r][c].solid: self.board[r][c].val = 0
                 v = self.board[r][c].val
                 if v != 0:
                     i = (c // 3) + (r // 3) * 3
                     rows.setdefault(r, set()).add(v)
                     cols.setdefault(c, set()).add(v)
                     boxes.setdefault(i, set()).add(v)
+
         def dfs(r, c):
             nonlocal attempts
             attempts += 1
-            if attempts % 500 == 0: 
+            if attempts % 1000 == 0: 
                 self.draw()
                 pygame.event.pump()
             if r >= N: return True # Processed all rows
@@ -187,7 +209,9 @@ class Sudoku:
                 rows.setdefault(r, set()).add(n)
                 cols.setdefault(c, set()).add(n)
                 boxes.setdefault(i, set()).add(n)
+                self.board[r][c].solving = True
                 if dfs(next_r, next_c): return True # Found solution
+                self.board[r][c].solving = False
                 self.board[r][c].val = 0 # Backtracking
                 rows[r].remove(n)
                 cols[c].remove(n)
@@ -209,19 +233,58 @@ class Sudoku:
             if self.board[cell//9][cell%9].val != 0:
                 empty.remove(cell)
                 n -= 1
+                self.board[cell//9][cell%9].solid = True
         return self.valid()
-    
+
+    def select(self, pos):
+        x, y = pos[0], pos[1]
+        i, j = (x-POSX)//w, (y-POSY)//h
+        cell = self.board[i][j]
+        for r in range(N):
+            for c in range(N):
+                if self.board[r][c].selected: self.board[r][c].selected = False
+        cell.selected = True
+
+mistakes = 0
+number_keys = {pygame.K_0: 0, pygame.K_1: 1, pygame.K_2: 2, pygame.K_3: 3, pygame.K_4: 4,
+               pygame.K_5: 5, pygame.K_6: 6, pygame.K_7: 7, pygame.K_8: 8, pygame.K_9: 9}
+
 def main():
-    game = Sudoku()
-    game.generate()
+    global mistakes
+    game = Sudoku(test=True)
     run = True
     while run:
+        if mistakes > 5: game.solve()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
-            elif event.type == pygame.KEYDOWN:
+            if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
-                    game.solve()
+                    if not game.solve(): print("Unsolveable!")
+                elif event.key == pygame.K_t: # Toggle states (cheat)
+                    for r in range(N):
+                        for c in range(N):
+                            if game.board[r][c].solid or game.board[r][c].solving:
+                                game.board[r][c].solid, game.board[r][c].solving = False, False
+                elif event.key == pygame.K_c: # Clear board
+                    for r in range(N):
+                        for c in range(N):
+                            if game.board[r][c].val != 0 and not game.board[r][c].solid: game.board[r][c].val = 0
+                elif event.key in number_keys:
+                    for r in range(N):
+                        for c in range(N):
+                            if game.board[r][c].selected and not game.board[r][c].solid:
+                                game.board[r][c].val = number_keys[event.key]
+                                if not game.valid(): 
+                                    game.board[r][c].val = 0
+                                    mistakes += 1
+
+            elif pygame.mouse.get_pressed()[0]:
+                pos = pygame.mouse.get_pos()
+                try:
+                    game.select(pos)
+                except (AttributeError,IndexError):
+                    continue
         game.draw()
     pygame.quit()
 
