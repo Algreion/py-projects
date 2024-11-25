@@ -137,6 +137,10 @@ TOTAL_RECTS = 100
 RECT_WIDTH = 800//TOTAL_RECTS
 RECT_SPACING = 2 if TOTAL_RECTS < 150 else 1
 FONT = pygame.font.SysFont("verdana", 20)
+RECT_COLOR = "cadetblue1"
+SORTED_COLOR = "white"
+TXT_COLOR = "white"
+BG = "black"
 TIME = 0.01
 local = os.path.dirname(__file__)
 BEEP = pygame.mixer.Sound(os.path.join(local, "blip.wav"))
@@ -148,20 +152,21 @@ def generate_array():
     return arr
 
 def draw(win, arr, end=False, sorted_indices=set(), sort=None,c=0):
-    win.fill("black")
+    pygame.event.pump()
+    win.fill(BG)
     if end:
         sorted_indices = set(range(len(arr)))
     if sort:
-        txt = FONT.render("Algorithm: " + sort, True, "white")
+        txt = FONT.render("Algorithm: " + sort, True, TXT_COLOR)
         win.blit(txt, (10, 10))
-    win.blit(FONT.render("Total: " + str(TOTAL_RECTS), True, "white"), (10, 35))
+    win.blit(FONT.render("Total: " + str(TOTAL_RECTS), True, TXT_COLOR), (10, 35))
     total_width = TOTAL_RECTS * (RECT_WIDTH + RECT_SPACING)
     start_x = (WIDTH - total_width) // 2
     for i, val in enumerate(arr):
         height = int((val / TOTAL_RECTS) * (HEIGHT - 100))
         x = start_x + i * (RECT_WIDTH + RECT_SPACING)
         y = HEIGHT - height
-        color = "white" if i in sorted_indices else "cadetblue1"
+        color = SORTED_COLOR if i in sorted_indices else RECT_COLOR
         pygame.draw.rect(win, color, (x, y, RECT_WIDTH, height))
         if end:
             time.sleep(TIME//2)
