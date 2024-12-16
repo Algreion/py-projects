@@ -5,6 +5,7 @@ from copy import deepcopy
 pygame.font.init()
 
 N = 9
+BOARDS = 20
 
 def logg(func):
     def wrapper(*args, **kwargs):
@@ -165,7 +166,7 @@ def theme(palette=0):
             SEL_COLOR = (80, 80, 120)
             HINT_COLOR = (40, 40, 70)
             PM_COLOR = (180, 180, 220)
-            PM_COLOR_BG = (20, 20, 40)
+            PM_COLOR_BG = (80, 60, 90)
             SOLVER_COLOR = (50, 150, 100)
             BG = (10, 10, 30)
             MAIN_COLOR = (220, 220, 250)
@@ -176,7 +177,7 @@ def theme(palette=0):
             SEL_COLOR = (207, 207, 196)
             HINT_COLOR = (241, 225, 255)
             PM_COLOR = (175, 215, 237)
-            PM_COLOR_BG = (255, 239, 213)
+            PM_COLOR_BG = (255, 239, 203)
             SOLVER_COLOR = (173, 216, 230)
             BG = (255, 250, 240)
             MAIN_COLOR = (128, 128, 128)
@@ -199,6 +200,7 @@ def test_boards():
     for number in range(1,2):
         board = [[] for _ in range(N)]
         match number:
+                case 1: board= None
                 case _: pass
         b = ArraySudoku()
         b._board = board
@@ -260,54 +262,67 @@ class Sudoku:
     def __init__(self, number=None):
         """Initializes the Sudoku board using Cell objects"""
         self.board = [[0]*N for _ in range(N)]
+        self.number = number
         if number:
             match number:
                 case 1: board= [[3,0,1,0,0,8,0,0,0],[4,0,2,3,7,0,1,8,9],[5,0,9,6,2,1,0,4,7], 
                                 [0,2,8,0,0,0,0,7,3],[0,0,7,0,0,6,0,0,0],[0,4,0,2,0,0,5,0,1], # Easy 
                                 [0,0,4,7,5,0,0,0,0],[0,1,0,0,0,0,0,5,0],[0,0,0,0,6,4,7,0,8]]
-                case 2: board= [[0,2,0,5,0,8,9,0,3],[6,8,0,1,9,0,0,0,0],[0,0,0,3,4,0,0,0,7],
+                case 2: board= [[0,7,2,0,0,0,0,8,9],[0,0,9,8,0,0,0,1,6],[8,3,1,0,9,4,7,0,0], 
+                                [4,0,5,0,2,0,0,0,3],[9,0,0,0,5,7,1,0,5],[0,0,3,1,0,8,0,2,0], # Easy 
+                                [0,0,0,0,0,9,2,3,0],[0,8,4,0,3,5,0,0,0],[0,0,0,0,8,1,5,4,0]]
+                case 3: board= [[0,2,0,5,0,8,9,0,3],[6,8,0,1,9,0,0,0,0],[0,0,0,3,4,0,0,0,7],
                                 [0,0,1,9,0,0,0,4,5],[0,0,0,0,0,0,8,0,0],[3,0,9,0,0,0,0,0,0], # Easy
                                 [0,0,2,0,0,5,0,0,0],[0,0,0,7,0,0,1,6,0],[7,0,0,0,1,0,5,0,8]]
-                case 3: board= [[0,0,0,0,0,0,0,8,0],[0,4,0,6,2,0,5,7,9],[3,7,5,8,0,0,0,0,2],
+                case 4: board= [[0,9,0,0,0,2,0,1,0],[2,0,8,0,4,0,9,3,0],[7,0,3,1,0,6,8,0,0],
+                                [0,0,0,3,0,0,1,4,5],[1,8,5,0,2,9,6,0,0],[0,7,4,0,0,1,2,0,8], # Easy
+                                [0,0,0,2,0,0,0,8,0],[5,0,0,9,0,0,7,6,2],[8,0,0,6,0,3,0,0,0]]
+                case 5: board= [[0,0,0,0,0,0,0,8,0],[0,4,0,6,2,0,5,7,9],[3,7,5,8,0,0,0,0,2],
                                 [8,2,9,0,3,5,0,6,1],[4,0,0,9,0,7,8,0,5],[7,5,1,0,8,6,3,0,4], # Easy
                                 [9,1,6,0,0,0,0,0,0],[0,0,7,1,0,0,0,3,0],[2,3,0,5,0,8,9,0,0]]
-                case 4: board= [[0,9,0,0,0,0,2,0,0],[0,0,2,6,9,0,0,4,0],[0,0,0,4,8,2,0,0,1],
+                case 6: board= [[0,9,0,0,0,0,2,0,0],[0,0,2,6,9,0,0,4,0],[0,0,0,4,8,2,0,0,1],
                                 [0,8,1,0,0,7,0,0,4],[4,0,3,8,0,0,1,6,0],[0,0,0,5,1,0,0,7,0], # Medium
                                 [0,2,8,0,4,0,0,0,0],[1,3,0,0,0,0,0,0,0],[0,0,0,0,0,0,7,5,2]]
-                case 5: board= [[7,0,0,0,0,8,0,0,3],[5,0,0,0,0,0,6,1,0],[0,0,0,6,5,3,0,0,7],
+                case 7: board= [[7,0,0,0,0,8,0,0,3],[5,0,0,0,0,0,6,1,0],[0,0,0,6,5,3,0,0,7],
                                 [0,0,8,0,1,0,3,0,0],[9,7,5,0,0,0,4,0,0],[0,0,2,9,0,0,0,0,0], # Medium
                                 [0,0,0,0,7,0,0,0,0],[0,4,0,5,3,6,0,0,0],[0,0,0,0,0,0,2,0,0]]
-                case 6: board= [[0,0,0,6,0,0,5,0,1],[6,5,1,2,4,7,0,0,0],[0,0,0,5,0,0,0,0,0],
+                case 8: board= [[0,0,0,6,0,0,5,0,1],[6,5,1,2,4,7,0,0,0],[0,0,0,5,0,0,0,0,0],
                                 [0,0,0,0,6,8,0,2,0],[2,7,0,0,0,0,4,8,0],[0,8,3,7,2,0,0,0,0], # Medium
                                 [9,0,5,8,0,2,0,1,0],[0,3,0,0,0,0,0,5,0],[0,2,4,0,5,0,6,0,0]]
-                case 7: board= [[3,8,0,0,5,0,0,4,0],[0,5,0,6,0,3,0,0,7],[0,0,0,0,0,4,0,3,1], 
+                case 9: board= [[3,8,0,0,5,0,0,4,0],[0,5,0,6,0,3,0,0,7],[0,0,0,0,0,4,0,3,1], 
                                 [0,0,0,0,0,8,9,0,2],[6,0,3,0,0,0,0,0,0],[0,0,8,5,6,1,0,0,0], # Medium
                                 [0,0,6,7,0,0,2,1,0],[0,0,7,0,3,2,4,0,0],[0,2,0,0,9,0,0,0,3]]
-                case 8: board= [[0,4,9,0,0,0,0,3,0],[6,0,0,7,0,0,0,0,0],[0,0,0,0,0,0,7,0,4], 
+                case 10: board= [[0,4,9,0,0,0,0,3,0],[6,0,0,7,0,0,0,0,0],[0,0,0,0,0,0,7,0,4], 
                                 [0,3,0,9,0,0,8,0,0],[0,7,6,0,0,1,0,4,0],[9,8,1,4,0,3,0,5,0], # Medium
                                 [0,0,0,0,6,8,4,0,7],[5,2,0,0,9,0,0,8,0],[0,0,0,0,0,2,9,0,0]]
-                case 9: board= [[0,8,6,0,9,0,0,0,1],[0,4,0,0,1,0,0,6,0],[0,0,9,0,0,7,0,0,0], 
+                case 11: board= [[0,8,6,0,9,0,0,0,1],[0,4,0,0,1,0,0,6,0],[0,0,9,0,0,7,0,0,0], 
                                 [0,9,0,8,0,0,0,0,0],[3,5,0,2,0,6,0,7,9],[0,0,0,0,0,1,0,3,0], # Medium
                                 [0,0,0,1,0,0,4,0,0],[0,6,0,0,5,0,0,1,0],[4,0,0,0,2,0,7,9,0]]
-                case 10: board=[[0,0,2,0,0,0,0,0,0],[0,0,0,0,0,0,9,1,3],[0,9,0,3,0,0,0,5,0],
+                case 12: board=[[0,0,2,0,0,0,0,0,0],[0,0,0,0,0,0,9,1,3],[0,9,0,3,0,0,0,5,0],
                                 [0,0,0,1,8,0,0,4,0],[0,0,0,0,0,4,7,2,0],[0,7,3,0,0,0,0,0,0], # Hard
                                 [7,0,0,0,0,0,0,0,0],[0,1,0,0,7,0,0,0,0],[6,8,0,0,0,0,4,0,9]]
-                case 11: board=[[0,0,8,2,0,0,0,0,0],[0,9,0,0,1,0,0,0,4],[0,6,0,0,0,0,3,0,0],
+                case 13: board=[[0,0,8,2,0,0,0,0,0],[0,9,0,0,1,0,0,0,4],[0,6,0,0,0,0,3,0,0],
                                 [0,0,0,7,0,0,0,2,0],[5,0,0,0,0,0,0,0,9],[0,1,0,0,0,6,0,0,0], # Hard
                                 [0,0,7,0,0,0,0,8,0],[2,0,0,0,4,0,0,1,0],[0,0,0,0,0,3,5,0,0]]
-                case 12: board=[[8,0,0,6,0,0,0,0,0],[7,0,0,0,0,3,4,0,0],[0,0,4,0,7,0,0,0,0],
+                case 14: board=[[8,0,0,6,0,0,0,0,0],[7,0,0,0,0,3,4,0,0],[0,0,4,0,7,0,0,0,0],
                                 [0,0,0,5,9,0,0,1,7],[0,0,0,0,0,0,0,5,0],[6,0,0,0,1,0,0,9,0], # Hard
                                 [0,0,0,0,0,0,0,6,9],[9,5,0,0,8,0,0,0,0],[0,0,0,0,0,2,3,0,0]]
-                case 13: board=[[5,0,0,2,0,0,0,4,0],[0,0,0,6,0,3,0,0,0],[0,3,0,0,0,9,0,0,7],
+                case 15: board=[[5,0,0,2,0,0,0,4,0],[0,0,0,6,0,3,0,0,0],[0,3,0,0,0,9,0,0,7],
                                 [0,0,3,0,0,7,0,0,0],[0,0,7,0,0,8,0,0,0],[6,0,0,0,0,0,0,2,0], # Hard | From Cracking the Cryptic: https://www.youtube.com/watch?v=9m9t8ie9-EE
                                 [0,8,0,0,0,0,0,0,3],[0,0,0,4,0,0,6,0,0],[0,0,0,1,0,0,5,0,0]]
-                case 14: board=[[1,0,0,4,0,0,7,0,0],[0,2,0,0,5,0,0,8,0],[0,0,3,0,0,6,0,0,9],
+                case 16: board=[[0,0,0,0,0,0,0,0,0],[0,2,0,9,0,0,3,8,0],[0,3,0,1,0,0,7,5,0], 
+                                [0,4,8,0,2,0,0,0,0],[0,5,0,0,0,6,0,0,0],[7,6,0,5,0,0,4,1,0], # Hard | Cracking the Cryptic: https://www.youtube.com/watch?v=fjWOgJqRWZI
+                                [4,0,0,0,0,3,0,0,0],[2,0,0,8,4,5,6,7,0],[0,7,5,2,0,0,0,0,0]]
+                case 17: board=[[0,1,2,0,3,0,4,5,0],[5,6,0,0,0,0,0,0,0],[3,0,0,0,0,0,0,0,2], 
+                                [0,7,0,0,1,5,0,0,0],[0,0,0,6,0,9,0,0,0],[0,0,0,4,2,0,0,8,0], # Hard | Cracking the Cryptic: https://www.youtube.com/watch?v=YoO12J51Irs
+                                [1,0,0,0,0,0,0,0,3],[0,0,0,0,0,0,0,2,4],[0,8,3,0,4,0,5,7,0]]
+                case 18: board=[[1,0,0,4,0,0,7,0,0],[0,2,0,0,5,0,0,8,0],[0,0,3,0,0,6,0,0,9],
                                 [0,1,0,0,4,0,0,7,0],[0,0,2,0,0,5,0,0,8],[9,0,0,3,0,0,6,0,0], # Extreme | From Cracking the Cryptic: https://www.youtube.com/watch?v=8C-A7xmBLRU
                                 [7,0,0,0,0,8,0,0,2],[8,0,0,2,0,0,9,0,0],[0,9,0,0,7,0,0,1,0]]
-                case 15: board=[[3,0,0,1,0,0,0,0,0],[0,7,0,0,0,0,0,1,0],[0,0,0,0,0,5,0,0,4],
+                case 19: board=[[3,0,0,1,0,0,0,0,0],[0,7,0,0,0,0,0,1,0],[0,0,0,0,0,5,0,0,4],
                                 [5,4,0,3,0,0,0,0,0],[0,0,7,0,0,9,0,0,1],[0,6,0,2,5,0,0,0,0], # Extreme 
                                 [0,0,0,0,1,6,0,2,0],[2,0,0,8,0,0,6,0,0],[0,0,0,0,0,7,0,5,9]]
-                case 16: board=[[0,0,0,1,0,2,0,0,0],[0,6,0,0,0,0,0,7,0],[0,0,8,0,0,0,9,0,0],
+                case 20: board=[[0,0,0,1,0,2,0,0,0],[0,6,0,0,0,0,0,7,0],[0,0,8,0,0,0,9,0,0],
                                 [4,0,0,0,0,0,0,0,3],[0,5,0,0,0,7,0,0,0],[2,0,0,0,8,0,0,0,1], # Extreme | From Cracking the Cryptic: https://www.youtube.com/watch?v=Ui1hrp7rovw
                                 [0,0,9,0,0,0,8,0,5],[0,7,0,0,0,0,0,6,0],[0,0,0,3,0,4,0,0,0]]
                 case _: number = None
@@ -332,6 +347,8 @@ class Sudoku:
             else: 
                 x = MISTAKEFONT.render("X"*mistakes, True, MISTAKES_COLOR)
             win.blit(x, (50, HEIGHT-60))
+        num = MISTAKEFONT.render(str(self.number),True,(MAIN_COLOR)) if self.number else MISTAKEFONT.render("R",True,(MAIN_COLOR))
+        win.blit(num, (5,5))
         if won:
             m, s = clock//60, clock%60
             clock = FONT.render(f"SOLVED! [{m:02d}:{s:02d}]", True, SOLVING_COLOR)
@@ -483,11 +500,11 @@ number_keys = {pygame.K_0: 0, pygame.K_1: 1, pygame.K_2: 2, pygame.K_3: 3, pygam
                pygame.K_5: 5, pygame.K_6: 6, pygame.K_7: 7, pygame.K_8: 8, pygame.K_9: 9}
 
 def main():
-    global mistakes, HINTS, FAIL
+    global mistakes, HINTS, FAIL, RANDOM
     if not RANDOM: game = Sudoku(number=SUDOKU)
     else:
         game = Sudoku()
-        if not game.generate_test(CLUES): game = Sudoku(number=random.randint(1,16))
+        if not game.generate_test(CLUES): game = Sudoku(number=random.randint(1,BOARDS))
     start = time.time()
     confirm = False
     solved = False
@@ -530,8 +547,11 @@ def main():
                 elif event.key == pygame.K_c: # Clear board
                     game.clear()
                 elif event.key == pygame.K_h: # Toggle hints
-                    HINTS = False if HINTS else True
-                    print("Toggled position hints on") if HINTS else print("Toggled position hints off")
+                    HINTS = not HINTS
+                    print(f"Toggled position hints {"on" if HINTS else "off"}")
+                elif event.key == pygame.K_g: # Toggle random generation
+                    RANDOM = not RANDOM
+                    print(f"Toggled random-generation {"on" if RANDOM else "off"}")
                 elif event.key == pygame.K_r: # Randomize board
                     if confirm:
                         confirm = False
@@ -541,8 +561,9 @@ def main():
                         game.wipe()
                         pygame.display.update()
                         if RANDOM:
-                            if not game.generate_test(CLUES): game = Sudoku(number=random.randint(1,16))
-                        else: game = Sudoku(number=random.randint(1,16))
+                            game.number = None
+                            if not game.generate_test(CLUES): game = Sudoku(number=random.randint(1,BOARDS))
+                        else: game = Sudoku(number=random.randint(1,BOARDS))
                     else:
                         print("Are you sure? Press R again to generate a new board")
                         confirm = True
@@ -593,13 +614,13 @@ def main():
 
 RANDOM = False # Generate a random Sudoku, quality may vary
 CLUES = random.randint(25,40) # 25-40
-SUDOKU = random.randint(1,13) # Premade high-quality Sudokus 1-16 (of increasing difficulty)
+SUDOKU = random.randint(1,BOARDS-3) # Premade high-quality Sudokus 1-17 (of increasing difficulty)
 
-FAIL = True  # Show mistakes, 5+ will end the game. If False, press ENTER with a complete board to confirm placements.
+FAIL = False  # Show mistakes, 5+ will end the game. If False, press ENTER with a complete board to confirm placements.
 THRESHOLD = 5 # How many mistakes are allowed
 HINTS = True # Position hints
 
 if __name__ == "__main__":
     theme()
-    print("Keys\nRight Click: Pencilmark | T: Change Theme | R: Generate new board | ENTER: Submit\nH: Toggle Hints | C: Clear board | F: Toggle mistakes | SPACE: Solver")
+    print("Keys\nRight Click: Pencilmark | T: Change Theme | R: Generate new board | ENTER: Submit\nH: Toggle Hints | C: Clear board | F: Toggle mistakes | G: Toggle random-gen\nSPACE: Solver")
     main()
