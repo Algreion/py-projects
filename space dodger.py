@@ -21,7 +21,7 @@ POWERUP_DURATION = 5000
 POWERUP_TYPES = {
     "speed": {"color": "blue", "effect": "speed"},
     "resize": {"color": "green", "effect": "resize"},
-    "invincibility": {"color": "yellow", "effect": "invincibility"}, "dodge": {"color": "orange","effect":"dodge"}}
+    "invincibility": {"color": "yellow", "effect": "invincibility"}, "dodge": {"color": "pink","effect":"dodge"}}
 
 def draw(player, elapsed, stars, powerups, difficulty, overlay):
     WIN.blit(BG, (0,0))
@@ -44,7 +44,7 @@ def main():
     run = True
     pw, ph = PW//2, PH//2
     player = pygame.Rect(WIDTH//2-PW, HEIGHT - PH, PW, PH)
-    overlay = pygame.image.load("space-player.png")
+    overlay = pygame.image.load("spaceship.png")
     scaled_overlay = pygame.transform.scale(overlay, (PW, PH))
     clock = pygame.time.Clock()
     start_time, elapsed = time.time(), 0
@@ -167,6 +167,7 @@ def main():
             lost_text = FONT.render(f"You lost! Total time: {round(elapsed)}s", 1, "white")
             WIN.blit(lost_text, (WIDTH//2 - lost_text.get_width()//2, HEIGHT//2 - lost_text.get_height()//2))
             pygame.display.update()
+            print(f"Final time: {round(elapsed)}s")
             pygame.time.delay(2000)
             break
         draw(player, elapsed, stars, powerups, difficulty, scaled_overlay)
