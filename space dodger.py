@@ -21,7 +21,7 @@ POWERUP_DURATION = 5000
 POWERUP_TYPES = {
     "speed": {"color": "blue", "effect": "speed"},
     "resize": {"color": "green", "effect": "resize"},
-    "invincibility": {"color": "yellow", "effect": "invincibility"}, "dodge": {"color": "pink","effect":"dodge"}}
+    "invincibility": {"color": "yellow", "effect": "invincibility"}, "dodge": {"color": "pink","effect":"dodge"}, "ui": {"color": "orange", "effect": "ui"}}
 
 def draw(player, elapsed, stars, powerups, difficulty, overlay):
     WIN.blit(BG, (0,0))
@@ -60,9 +60,8 @@ def main():
     invincibility = False
     ultra_instinct = False
     hit = False
+    ui = False
     difficulty = 0
-    bonanza = random.randint(10,120)*1000 # Need to work on having multiple power-up effects at once first
-    bonanza_end = False
 
     while run:
         star_count += clock.tick(60)
@@ -85,17 +84,6 @@ def main():
                 star_add_increment = max(50, star_add_increment-30)
                 POWERUP_SPD += 1
 
-        if elapsed - bonanza >= 0:
-            if bonanza_end:
-                bonanza = bonanza + random.randint(1,120)
-                bonanza_end = False
-                POWERUP_SPAWN_TIME = 7500
-                POWERUP_SPD -= 3
-            bonanza = bonanza + 10
-            POWERUP_SPAWN_TIME = 1000
-            POWERUP_SPD += 3
-            bonanza_end = True
-
         if star_count > star_add_increment:
             for _ in range(difficulty//5+1):
                 star_x = random.randint(0, WIDTH-STAR_WIDTH)
@@ -107,9 +95,10 @@ def main():
             if active_powerup["effect"] == "speed": SPD = original_speed
             elif active_powerup["effect"] == "resize": 
                 player.width, player.height = original_size
-                player.y = HEIGHT - PH
+                player.y = player.y - PH//2 if player.y < 750 else HEIGHT-PH
                 scaled_overlay = pygame.transform.scale(overlay, (PW, PH))
             elif active_powerup["effect"] == "invincibility": invincibility = False
+            elif active_powerup["effect"] == "ui": ui = False
             else:
                 ultra_instinct = False
             active_powerup = None
@@ -123,14 +112,18 @@ def main():
             powerup_rect = pygame.Rect(powerup_x, powerup_y, POWERUP_WIDTH, POWERUP_HEIGHT)
             powerups.append({'rect': powerup_rect, 'color': powerup_type['color'], 'effect': powerup_type['effect']})
             last_powerup_spawn_time = current_time
-        
+
         keys = pygame.key.get_pressed()
         if keys[pygame.K_LEFT] and player.x - SPD >= 0:
             player.x -= SPD
         if keys[pygame.K_RIGHT] and player.x + SPD + PW <= WIDTH:
             player.x += SPD
+        if keys[pygame.K_UP] and player.y - SPD > 0:
+            player.y -= SPD
+        if keys[pygame.K_DOWN] and player.y + SPD + PH <= HEIGHT:
+            player.y += SPD
         for star in stars[:]:
-            star.y += STAR_SPD
+            star.y += STAR_SPD if not ui else STAR_SPD//2
             if star.y > HEIGHT:
                 stars.remove(star)
             elif star.y + star.height >= player.y and star.colliderect(player):
@@ -154,7 +147,7 @@ def main():
                 if powerup['effect'] == "speed":
                     SPD *= 2
                 elif powerup['effect'] == "resize":
-                    player.y = HEIGHT - ph
+                    player.y = player.y + ph if player.y < 750 else HEIGHT - ph
                     player.height = ph
                     player.width = pw
                     scaled_overlay = pygame.transform.scale(overlay, (pw, ph))
@@ -162,6 +155,8 @@ def main():
                     invincibility = True
                 elif powerup["effect"] == "dodge":
                     ultra_instinct = True
+                elif powerup["effect"] == "ui":
+                    ui = True
         if hit:
             pygame.display.update()
             lost_text = FONT.render(f"You lost! Total time: {round(elapsed)}s", 1, "white")
