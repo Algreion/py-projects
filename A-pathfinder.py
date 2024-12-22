@@ -1,9 +1,8 @@
 import pygame
 import math
-from tkinter import *
-from tkinter import ttk
+import heapq
 from tkinter import messagebox
-
+import random
 
 #? A* Pathfinding algorithm
 # Unlike its predecessor Dijkstra, which only looks at the shortest path with a priority queue, this takes into
@@ -15,16 +14,28 @@ from tkinter import messagebox
 # Change colors
 # Refactor code (Encapsulate, wrap up in classes, avoid spilling outside __main__)
 # Make a better end screen (both for finding and not finding path)
-# Remove window border?
-# Scale down cell border if lots of cells (also fix width/height problem with 100+ cells)
-# Allow for diagonal movement? Allow for COLS /= ROWS
 
 
-SHOW = False
+SHOW = True
 
 ST, ED = (0,0), (-1,-1)
-COLS, ROWS = 20, 20
+ROWS, COLS = 30, 30
+MODE = 0
+modes = ["normal", "king", "horse", "diagonals", "jumper", "flash", "wallhugger","drunk","mirror", "wormhole"]
 border = False
+
+BG = (0,0,0)
+CB = False # Cell Borders
+WALLS = (255,255,255)
+TOCHECK = (0,255,0)
+PROCESSED = (255,0,0)
+PATH = (0,0,255)
+START = "orange"
+END = "magenta"
+BORDER = "gray80"
+WIDTH = 800 + (COLS - 800%COLS)
+HEIGHT = 800 + (ROWS - 800%ROWS)
+w = h = min(WIDTH // COLS, HEIGHT // ROWS)
 
 if border:
     COLS += 2
@@ -35,20 +46,11 @@ if border:
 grid = [0 for _ in range(COLS)] # Empty array
 toCheck = [] # Nodes to be evaluated
 processed = [] # Evaluated nodes
-TOCHECK = (0,255,0)
-PROCESSED = (255,0,0)
-PATH = (0,0,255)
-START = "orange"
-END = "magenta"
-BORDER = "gray80"
-WIDTH = 800
-HEIGHT = 800
-w = WIDTH // COLS # Width of nodes
-h = HEIGHT // ROWS # Height of nodes
 
 
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("A* Pathfinding")
+screen.fill(BG)
 
 class Node:
     def __init__(self, x, y):
@@ -75,15 +77,38 @@ class Node:
     def addNeighbors(self, grid):
         i = self.i
         j = self.j
-        # If not obstacle, add as neighbor
-        if i < COLS-1 and not grid[self.i + 1][j].obs: 
-            self.neighbors.append(grid[self.i + 1][j])
-        if i > 0 and not grid[self.i - 1][j].obs:
-            self.neighbors.append(grid[self.i - 1][j])
-        if j < ROWS-1 and not grid[self.i][j + 1].obs:
-            self.neighbors.append(grid[self.i][j + 1])
-        if j > 0 and not grid[self.i][j - 1].obs:
-            self.neighbors.append(grid[self.i][j - 1])
+        match modes[MODE]:
+            case "king": dirs = [(1,0),(0,1),(-1,0),(0,-1),(1,1),(-1,1),(1,-1),(-1,-1)]
+            case "horse": dirs = [(1,2),(1,-2),(-1,2),(-1,-2),(2,1),(-2,1),(2,-1),(-2,-1)]
+            case "diagonals": dirs = [(1,1),(-1,1),(1,-1),(-1,-1)]
+            case "jumper": dirs = [(1,0),(0,1),(-1,0),(0,-1),(2,0),(0,2),(-2,0),(0,-2)]
+            case "flash":
+                dirss = [(1,0),(0,1),(-1,0),(0,-1)]
+                dirs = []
+                for di, dj in dirss:
+                    ti,tj = i,j
+                    while 0<=ti+di<COLS and 0<=tj+dj<ROWS and not grid[ti+di][tj+dj].obs:
+                        ti+=di
+                        tj+=dj
+                    dirs.append((-i+ti,-j+tj))
+            case "wallhugger":
+                dirs = []
+                for di,dj in [(1,0),(0,1),(-1,0),(0,-1)]:
+                    for ddi, ddj in [(1,0),(0,1),(-1,0),(0,-1),(1,1),(-1,1),(1,-1),(-1,-1)]:
+                        if (di,dj) not in dirs and (not (0<=i+di+ddi<COLS) or not (0<=j+dj+ddj<ROWS) or grid[i+di+ddi][j+dj+ddj].obs): dirs.append((di,dj))
+            case "drunk":
+                dirs = [(random.choice([-1, 0, 1]), random.choice([-1, 0, 1])) for _ in range(8)]
+            case "mirror":
+                dirs = [(-i+j,-j+i),(0,-1),(0,1),(1,0),(-1,0)]
+            case "wormhole":
+                dirs = [(1,0),(0,1),(-1,0),(0,-1)]
+                if i == 0: dirs.append((ROWS-1,j))
+                if j == 0: dirs.append((i,COLS-1))
+            case _: dirs = [(1,0),(0,1),(-1,0),(0,-1)]
+        
+        for di, dj in dirs:
+            if (0<=i+di<COLS) and (0<=j+dj<ROWS) and not grid[i+di][j+dj].obs:
+                self.neighbors.append(grid[i+di][j+dj])
 
 
 # Create 2d array
@@ -96,9 +121,10 @@ for i in range(COLS):
         grid[i][j] = Node(i, j)
 
 # Show the empty grid
-for i in range(COLS):
-    for j in range(ROWS):
-        grid[i][j].show((255, 255, 255), 1)
+if CB:
+    for i in range(COLS):
+        for j in range(ROWS):
+            grid[i][j].show(WALLS, 1)
 
 if border:
     # Mark border (obstacles)
@@ -127,15 +153,16 @@ def draw(pos):
     square = grid[i][j]
     if not square.obs and square != start and square != end:
         square.obs = True
-        square.show((255, 255, 255), 0)
+        square.show(WALLS, 0)
+
 def erase(pos):
     x, y = pos[0], pos[1]
     i, j = x // w, y // h
     square = grid[i][j]
     if square.obs and square != start and square != end:
         square.obs = False
-        square.show((0, 0, 0), 0)
-        square.show((255, 255, 255), 1)
+        square.show(BG, 0)
+        if CB: square.show(WALLS, 1)
 
 def weight(pos, n):
     x, y = pos[0], pos[1]
@@ -144,20 +171,20 @@ def weight(pos, n):
     if not square.obs and square != start and square != end:
         if n == 1:
             square.value = 1
-            square.show((0, 0, 0), 0)
-            square.show((255, 255, 255), 1)
+            square.show(BG, 0)
+            if CB: square.show(WALLS, 1)
         elif n == 0:
             square.value = 0
-            square.show((0, 0, 0), 0)
+            square.show(BG, 0)
+            if not CB: square.show(WALLS, 1)
         elif n > 0:
             square.value = n
             square.show((15*n, 0, 0), 0)
             square.show((255, 0, 0), 1)
         else:
             square.value = n
-            square.show((0, 15*(-n), 0), 1)
+            square.show((0, 15*(-n), 0), 0)
             square.show((0, 255, 0), 1)
-
 
 # Drawing time:
 drawing = True
@@ -233,7 +260,6 @@ def main():
                 current = current.previous
             end.show(END, 0)
 
-            Tk().wm_withdraw()
             result = messagebox.askokcancel("Path found", ("A path has been found.\nThe lowest distance to the path is " + str(distance//1) + " blocks away.\nPress OK to close."))
             if result or not result:
                 pygame.quit()
