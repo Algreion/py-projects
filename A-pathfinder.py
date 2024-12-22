@@ -9,14 +9,7 @@ import random
 # consideration the distance from the end as well, with a heuristic estimate (Euclidean/Manhattan distance).
 # The total cost thus is f = g + h, then it works the same as Dijkstra's algorithm with a priority queue
 
-# TODO:
-# Actual priority queue (minHeap) to speed up pathfinding / other speed ups to make it faster
-# Change colors
-# Refactor code (Encapsulate, wrap up in classes, avoid spilling outside __main__)
-# Make a better end screen (both for finding and not finding path)
-
-
-SHOW = True
+SHOW = False
 
 ST, ED = (0,0), (-1,-1)
 ROWS, COLS = 30, 30
@@ -24,13 +17,13 @@ MODE = 0
 modes = ["normal", "king", "horse", "diagonals", "jumper", "flash", "wallhugger","drunk","mirror", "wormhole"]
 border = False
 
-BG = (0,0,0)
+BG = (0,7,20)
 CB = False # Cell Borders
-WALLS = (255,255,255)
-TOCHECK = (0,255,0)
-PROCESSED = (255,0,0)
-PATH = (0,0,255)
-START = "orange"
+WALLS = (220,227,213)
+TOCHECK = (30,175,14)
+PROCESSED = (200,0,0)
+PATH = (0,160,245)
+START = "green"
 END = "magenta"
 BORDER = "gray80"
 WIDTH = 800 + (COLS - 800%COLS)
@@ -43,7 +36,7 @@ if border:
     if ST == (0, 0): ST = (1,1)
     if ED == (-1, -1): ED = (-2, -2)
 
-grid = [0 for _ in range(COLS)] # Empty array
+grid = [0 for _ in range(COLS)]
 toCheck = [] # Nodes to be evaluated
 processed = [] # Evaluated nodes
 
@@ -59,11 +52,11 @@ class Node:
         self.f = 0 # Cost function: f = g + h
         self.g = 0 # Cost from start node to current
         self.h = 0 # Heuristic estimate from current to end node
-        self.neighbors = [] # Adjacent path nodes
-        self.previous = None # Previous node in path
-        self.obs = False # Checks if it's an obstacle
-        self.processed = False # Checks if node has been evaluated
-        self.value = 1 # Default value for g (It costs 1 to travel to any adjacent neighbor)
+        self.neighbors = []
+        self.previous = None
+        self.obs = False # Obstacle
+        self.processed = False
+        self.value = 1 # Default cost value for g
 
     def show(self, color, border):
         if self.processed == False:
@@ -142,7 +135,6 @@ if border:
 start, end = grid[ST[0]][ST[1]], grid[ED[0]][ED[1]]
 
 pygame.init()
-toCheck.append(start)
 
 start.show(START, 0)
 end.show(END, 0)
@@ -186,11 +178,29 @@ def weight(pos, n):
             square.show((0, 15*(-n), 0), 0)
             square.show((0, 255, 0), 1)
 
+def reposition(item, pos):
+    global start,end
+    x, y = pos[0], pos[1]
+    i, j = x // w, y // h
+    if item == "start":
+        if grid[i][j] == end or grid[i][j].obs: return
+        start.show(BG,0)
+        if CB: start.show(WALLS, 1)
+        start = grid[i][j]
+        start.show(START,0)
+    else: 
+        if grid[i][j] == start or grid[i][j].obs: return
+        end.show(BG,0)
+        if CB: end.show(WALLS, 1)
+        end = grid[i][j]
+        end.show(END,0)
+
 # Drawing time:
 drawing = True
 neg = 1 # Negative weights
 number_keys = {pygame.K_0: 0, pygame.K_1: 1, pygame.K_2: 2, pygame.K_3: 3, pygame.K_4: 4,
                pygame.K_5: 5, pygame.K_6: 6, pygame.K_7: 7, pygame.K_8: 8, pygame.K_9: 9}
+print("\nLeft Click: Draw walls | Right Click: Erase walls | Space: Begin pathfinding\nNumbers: Increase cell weights | N: Toggle negative weights\nP: Toggle show progress | S/E: Reposition Start/End\n")
 while drawing:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -211,21 +221,29 @@ while drawing:
                 continue
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
-                print("Finding path...")
+                print("Finding path...\n")
                 drawing = False
                 break
             elif event.key == pygame.K_n:
                 print("Toggled [Negative weights]")
                 neg = -1 if neg == 1 else 1
+            elif event.key == pygame.K_p:
+                SHOW = not SHOW
+                print("Toggled [Show Process]",f"{"ON" if SHOW else "OFF"}")
             elif event.key == pygame.K_s:
-                SHOW = False if SHOW else True
-                print("Toggled [Show Process]")
+                pos = pygame.mouse.get_pos()
+                reposition("start", pos)
+            elif event.key == pygame.K_e:
+                pos = pygame.mouse.get_pos()
+                reposition("end", pos)
             elif event.key in number_keys:
                 pos = pygame.mouse.get_pos()
                 try:
                     weight(pos, number_keys[event.key] * neg)
                 except (AttributeError,IndexError):
                     continue
+
+toCheck.append(start)
 
 # Add neighbors considering new obstacles
 for i in range(COLS):
@@ -234,7 +252,6 @@ for i in range(COLS):
 
 # A* Heuristic function
 def heurisitic(node, end):
-    # Estimated cost between the currend node and the end position
     return math.sqrt((node.i - end.i)**2 + (node.j - end.j)**2)
 
 # Pathfinding
@@ -245,16 +262,16 @@ def main():
     end.show(END, 0)
     if toCheck: # Check while nodes haven't been checked yet
         lowestIndex = 0
-        for i in range(len(toCheck)): # Find lowest f score (slowest part, need a minHeap here)
+        for i in range(len(toCheck)): # Find lowest f score
             if toCheck[i].f < toCheck[lowestIndex].f:
                 lowestIndex = i
 
-        current = toCheck[lowestIndex] # Set current to it
-        if current == end: # If it's the end:
+        current = toCheck[lowestIndex]
+        if current == end:
             distance = int(current.f)
             print("Path found. Distance:", distance)
             start.show(START,0)
-            while current.previous: # Trace back previous path with node.previous
+            while current.previous: # Trace back previous path
                 current.processed = False
                 current.show(PATH, 0)
                 current = current.previous
@@ -264,22 +281,22 @@ def main():
             if result or not result:
                 pygame.quit()
                 return
-            
+
         toCheck.pop(lowestIndex)
-        processed.append(current) # We've checked that node
+        processed.append(current)
 
         neighbors = current.neighbors
         for i in range(len(neighbors)): # Add neighbors
             neighbor = neighbors[i]
             if neighbor not in processed:
-                tempG = current.g + current.value # Evaluate current cost value
+                tempG = current.g + current.value
                 if neighbor in toCheck:
                     if neighbor.g > tempG: # If this cost is smaller than before, you set it as the new cost (we found a shortest path to the node)
                         neighbor.g = tempG
                         neighbor.previous = current 
                 else:
                     neighbor.g = tempG
-                    toCheck.append(neighbor) # Add in toCheck
+                    toCheck.append(neighbor)
                     neighbor.previous = current 
 
             neighbor.h = heurisitic(neighbor, end)
@@ -310,19 +327,3 @@ while True:
     pygame.display.update()
     main()
 
-
-# Code for moving in tiles
-def update(self, tilemap, movement=(0, 0)):
-    frame_movement = (movement[0] + self.velocity[0], movement[1] + self.velocity[1])
-
-    self.pos[0] += frame_movement[0]
-    entity_rect = self.rect()
-    for rect in tilemap.physics_rects_around(self.pos):
-        if entity_rect.colliderect(rect):
-            if frame_movement[0] > 0:
-                entity_rect.right = rect.left
-            else:
-                entity_rect.left = rect.right
-    
-    self.pos[1] += frame_movement[1]
-    self.velocity[1] = min(5, self.velocity[1] + 0.1)
