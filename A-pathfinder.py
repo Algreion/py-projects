@@ -5,23 +5,21 @@ from tkinter import ttk
 from tkinter import messagebox
 
 
-# A* Pathfinding algorithm
+#? A* Pathfinding algorithm
 # Unlike its predecessor Dijkstra, which only looks at the shortest path with a priority queue, this takes into
 # consideration the distance from the end as well, with a heuristic estimate (Euclidean/Manhattan distance).
 # The total cost thus is f = g + h, then it works the same as Dijkstra's algorithm with a priority queue
 
-# To add: 
+# TODO:
 # Actual priority queue (minHeap) to speed up pathfinding / other speed ups to make it faster
 # Change colors
-# Get rid of all Tkinter stuff (terminal interface?)
 # Refactor code (Encapsulate, wrap up in classes, avoid spilling outside __main__)
 # Make a better end screen (both for finding and not finding path)
 # Remove window border?
 # Scale down cell border if lots of cells (also fix width/height problem with 100+ cells)
+# Allow for diagonal movement? Allow for COLS /= ROWS
 
 
-
-ASK = False
 SHOW = False
 
 ST, ED = (0,0), (-1,-1)
@@ -115,42 +113,7 @@ if border:
         grid[i][0].obs = True
 
 
-
-
-if ASK:
-    # Tkinter box
-    def onsubmit():
-        global start
-        global end
-        st = startBox.get().split(',')
-        ed = endBox.get().split(',')
-        start = grid[int(st[0])][int(st[1])]
-        end = grid[int(ed[0])][int(ed[1])]
-        window.quit()
-        window.destroy()
-
-    window = Tk()
-    label = Label(window, text='Start (x,y): ')
-    startBox = Entry(window)
-    label1 = Label(window, text='End (x,y): ')
-    endBox = Entry(window)
-    var = IntVar()
-    showPath = ttk.Checkbutton(window, text='Show Steps :', onvalue=1, offvalue=0, variable=var)
-
-    submit = Button(window, text='Submit', command=onsubmit)
-
-    label.grid(row=0, pady=3)
-    label1.grid(row=1, pady=3)
-    startBox.grid(row=0, column=1, pady=3)
-    endBox.grid(row=1, column=1, pady=3)
-    showPath.grid(columnspan=2, row=2)
-    submit.grid(columnspan=2, row=3)
-
-
-    window.update()
-    mainloop() # Mainloop of Tkinter
-else:
-    start, end = grid[ST[0]][ST[1]], grid[ED[0]][ED[1]]
+start, end = grid[ST[0]][ST[1]], grid[ED[0]][ED[1]]
 
 pygame.init()
 toCheck.append(start)
@@ -244,9 +207,8 @@ for i in range(COLS):
 
 # A* Heuristic function
 def heurisitic(node, end):
-    d = math.sqrt((node.i - end.i)**2 + (node.j - end.j)**2)
-    # d = Estimated cost between the currend node and the end position
-    return d
+    # Estimated cost between the currend node and the end position
+    return math.sqrt((node.i - end.i)**2 + (node.j - end.j)**2)
 
 # Pathfinding
 def main():
@@ -297,7 +259,7 @@ def main():
             neighbor.h = heurisitic(neighbor, end)
             neighbor.f = neighbor.g + neighbor.h
             
-    if SHOW or ASK and var.get():
+    if SHOW:
         for i in range(len(toCheck)):
             toCheck[i].show(TOCHECK, 0)
 
