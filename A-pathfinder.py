@@ -198,9 +198,11 @@ def reposition(item, pos):
 # Drawing time:
 drawing = True
 neg = 1 # Negative weights
+modeselect = False
 number_keys = {pygame.K_0: 0, pygame.K_1: 1, pygame.K_2: 2, pygame.K_3: 3, pygame.K_4: 4,
                pygame.K_5: 5, pygame.K_6: 6, pygame.K_7: 7, pygame.K_8: 8, pygame.K_9: 9}
-print("\nLeft Click: Draw walls | Right Click: Erase walls | Space: Begin pathfinding\nNumbers: Increase cell weights | N: Toggle negative weights\nP: Toggle show progress | S/E: Reposition Start/End\n")
+print("""\nLeft Click: Draw walls | Right Click: Erase walls | Space: Begin pathfinding
+Numbers: Increase cell weights | N: Toggle negative weights\nP: Toggle show progress | S/E: Reposition Start/End | M + Numbers: Change movement type\n""")
 while drawing:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -236,12 +238,19 @@ while drawing:
             elif event.key == pygame.K_e:
                 pos = pygame.mouse.get_pos()
                 reposition("end", pos)
+            elif event.key == pygame.K_m:
+                modeselect = not modeselect
+                print("Selecting Mode",f"{"[ON]" if modeselect else "[OFF]"}")
             elif event.key in number_keys:
-                pos = pygame.mouse.get_pos()
-                try:
-                    weight(pos, number_keys[event.key] * neg)
-                except (AttributeError,IndexError):
-                    continue
+                if modeselect:
+                    MODE = number_keys[event.key]
+                    print("Movement type:", modes[MODE])
+                else:
+                    pos = pygame.mouse.get_pos()
+                    try:
+                        weight(pos, number_keys[event.key] * neg)
+                    except (AttributeError,IndexError):
+                        continue
 
 toCheck.append(start)
 
