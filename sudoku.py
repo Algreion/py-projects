@@ -390,20 +390,26 @@ class Sudoku:
         def dfs(r, c):
             nonlocal attempts
             attempts += 1
-            if attempts <= 100:
-                self.draw()
-                pygame.event.pump()
-                time.sleep(0.01)
-            elif attempts <= 1000 and not attempts % 5:
-                self.draw()
-                pygame.event.pump()
-                time.sleep(0.01)
-            elif attempts <= 10**4 and not attempts % 100:
-                self.draw()
-                pygame.event.pump()
-            elif not attempts % 500:
-                self.draw()
-                pygame.event.pump()
+            if INSTANT:
+                if not attempts % 2000:
+                    self.draw()
+                    pygame.event.pump()
+            else:
+                if attempts <= 100:
+                    self.draw()
+                    pygame.event.pump()
+                    time.sleep(0.01)
+                elif attempts <= 1000 and not attempts % 5:
+                    self.draw()
+                    pygame.event.pump()
+                    time.sleep(0.01)
+                elif attempts <= 10**4 and not attempts % 100:
+                    self.draw()
+                    pygame.event.pump()
+                elif not attempts % 500:
+                    self.draw()
+                    pygame.event.pump()
+            
             if r >= N: return True # Processed all rows
             next_r, next_c = (r, c+1) if c < 8 else (r+1, 0)
             if self.board[r][c].val != 0: return dfs(next_r, next_c) # Skip done cells
@@ -500,7 +506,7 @@ number_keys = {pygame.K_0: 0, pygame.K_1: 1, pygame.K_2: 2, pygame.K_3: 3, pygam
                pygame.K_5: 5, pygame.K_6: 6, pygame.K_7: 7, pygame.K_8: 8, pygame.K_9: 9}
 
 def main():
-    global mistakes, HINTS, FAIL, RANDOM
+    global mistakes, HINTS, FAIL, RANDOM, INSTANT
     if not RANDOM: game = Sudoku(number=SUDOKU)
     else:
         game = Sudoku()
@@ -568,9 +574,12 @@ def main():
                         print("Are you sure? Press R again to generate a new board")
                         confirm = True
                 elif event.key == pygame.K_f: # Toggle fail condition
-                    FAIL = False if FAIL else True
+                    FAIL = not FAIL
                     print("Toggled fail condition on") if FAIL else print("Toggled fail condition off")
                     mistakes = 0
+                elif event.key == pygame.K_i:
+                    INSTANT = not INSTANT
+                    print(f"Toggled solving visualizer {"off" if INSTANT else "on"}")
                 elif event.key in number_keys:
                     for r in range(N):
                         for c in range(N):
@@ -619,8 +628,9 @@ SUDOKU = random.randint(1,BOARDS-3) # Premade high-quality Sudokus 1-17 (of incr
 FAIL = False  # Show mistakes, 5+ will end the game. If False, press ENTER with a complete board to confirm placements.
 THRESHOLD = 5 # How many mistakes are allowed
 HINTS = True # Position hints
+INSTANT = True # Solve instantly
 
 if __name__ == "__main__":
     theme()
-    print("Keys\nRight Click: Pencilmark | T: Change Theme | R: Generate new board | ENTER: Submit\nH: Toggle Hints | C: Clear board | F: Toggle mistakes | G: Toggle random-gen\nSPACE: Solver")
+    print("Keys\nRight Click: Pencilmark | T: Change Theme | R: Generate new board | ENTER: Submit\nH: Toggle Hints | C: Clear board | F: Toggle mistakes | G: Toggle random-gen\nSPACE: Solver | I: Toggle solve visualizer")
     main()
