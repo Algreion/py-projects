@@ -249,7 +249,7 @@ def mainloop():
             for c in range(COLS):
                 if CUSTOM_GRID[c][r] == "#": draw((r*w+1, c*h+1))
 
-    # Drawing section:
+    # Drawing time:
     drawing = True
     neg = 1 # Negative weights
     modeselect = False
@@ -328,7 +328,6 @@ def mainloop():
                             continue
 
     toCheck.append((0, (start.i,start.j)))
-    toshow = set([start])
 
     # Add neighbors considering new obstacles
     for i in range(COLS):
@@ -382,9 +381,8 @@ def mainloop():
                         neighbor.h = heuristic(neighbor, end) if DISTANCE else euclidean(neighbor, end)
                         neighbor.f = neighbor.g + neighbor.h
                         neighbor.previous = current
-                        heapq.heappush(toCheck,(neighbor.f,(a,b)))
+                        heapq.heappush(toCheck, (neighbor.f, (a, b)))
                         if SHOW: neighbor.show(TOCHECK, 0)
-                        toshow.add(neighbor)
 
         if not toCheck:
             print("There is no path to the end node.")
