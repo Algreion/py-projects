@@ -1,22 +1,27 @@
 import pygame
-import time
 import random
 from collections import deque
+import time
 pygame.font.init()
 
-WIDTH, HEIGHT = 800, 800
 N = 20
+WIDTH, HEIGHT = 800 + (N - 800%N), 800 + (N - 800%N)
 w, h = WIDTH // N, HEIGHT // N
 POSX, POSY = 0, 0
 win = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Snake")
 WALL = "white"
-SNAKE = "lime"
+SNAKE = "#42f54e"
 FOOD = "red"
 BG = "black"
+FONT = pygame.font.SysFont("comicsans", 20)
+FONTCOLOR = "white"
 
 INIT_SPEED = 1
 START_DIR = -1
+PORTALS = True
+DOUBLEFOOD = 15 + N
+TRIPLEFOOD = 100 + N
 
 class Cell:
     def __init__(self, x, y):
@@ -27,20 +32,24 @@ class Cell:
         self.dir = 0
     
     def draw(self, color = None):
-        if self.snake:
-            pygame.draw.rect(win, SNAKE, (POSX + self.x * w, POSY + self.y * h, w, h))
-        elif self.food:
-            pygame.draw.rect(win, FOOD, (POSX + self.x * w, POSY + self.y * h, w, h))
-        elif self.wall:
-            pygame.draw.rect(win, WALL, (POSX + self.x * w, POSY + self.y * h, w, h))
+        if not color:
+            if self.snake:
+                pygame.draw.rect(win, SNAKE, (POSX + self.x * w, POSY + self.y * h, w, h))
+            elif self.food:
+                pygame.draw.rect(win, FOOD, (POSX + self.x * w, POSY + self.y * h, w, h))
+            elif self.wall:
+                pygame.draw.rect(win, WALL, (POSX + self.x * w, POSY + self.y * h, w, h))
+            else:
+                pygame.draw.rect(win, BG, (POSX + self.x * w, POSY + self.y * h, w, h))
         else:
-            pygame.draw.rect(win, BG, (POSX + self.x * w, POSY + self.y * h, w, h))
+            pygame.draw.rect(win, color, (POSX + self.x * w, POSY + self.y * h, w, h))
 
 class Board:
     def __init__(self):
         self.grid = self.makegrid()
         self.snake = None
         self.food = 1
+        self.currentfood = 0
 
     def makegrid(self):
         grid = [0 for _ in range(N)]
@@ -57,11 +66,19 @@ class Board:
 
     def spawn_food(self):
         options = [self.grid[i][j] for i in range(N) for j in range(N) if not self.grid[i][j].snake and not self.grid[i][j].wall]
-        for _ in range(self.food):
-            x = random.choice(options)
+        for _ in range(self.food-self.currentfood):
+            try: x = random.choice(options)
+            except: break
             options.remove(x)
             x.food = True
             x.draw()
+        self.currentfood = self.food
+    def update_score(self, score):
+        for i in range(4):
+            for j in range(2):
+                self.grid[i][j].draw()
+        sc = FONT.render(f"Score: {str(score)}", True, FONTCOLOR)
+        win.blit(sc, (5, 5))
 
 class Snake:
     def __init__(self, board, x, y):
@@ -82,14 +99,21 @@ class Snake:
 
     def move(self):
         x,y = self.directs[self.direct]
-        next = (self.head.x + x, self.head.y + y)
-        if not (0<=next[0]<N and 0<=next[1]<N): return False
-        next = self.board.grid[self.head.x + x][self.head.y + y]
+        next_x, next_y = self.head.x + x, self.head.y + y
+        if not (0 <= next_x < N and 0 <= next_y < N):
+            if PORTALS:
+                if next_x < 0: next_x = N - 1
+                if next_y < 0: next_y = N - 1
+                if next_x >= N: next_x = 0
+                if next_y >= N: next_y = 0
+            else: return False
+        next = self.board.grid[next_x][next_y]
+
         if next.snake or next.wall:
             return False
         elif next.food:
             self.eat(next)
-        
+
         # Tail movement
         t = self.body.popleft()
         t.snake = False
@@ -109,6 +133,7 @@ class Snake:
 
     def eat(self, food):
         food.food = False
+        self.board.currentfood -= 1
         self.board.spawn_food()
         self.size += 1
         old = self.body[0]
@@ -125,9 +150,12 @@ class Snake:
         self.body.appendleft(new)
         new.snake = True
         new.draw()
+        if self.size == DOUBLEFOOD : self.board.food += 1
+        if self.size == TRIPLEFOOD: self.board.food += 1
 
 
 def main():
+    global PORTALS
     board = Board()
     snake = Snake(board, N//2, N//2)
     board.snake = snake
@@ -135,8 +163,13 @@ def main():
     run = True
     board.spawn_food()
     board.draw()
+    speed = 10 if N > 20 else 8 if N > 10 else 6
+    board.update_score(1)
+    score = 0
     while run:
-        clock.tick(10)
+        clock.tick(speed)
+        moved = False
+        score = snake.size
         for event in pygame.event.get():
             if event.type == pygame.QUIT: 
                 run = False
@@ -144,17 +177,35 @@ def main():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_RIGHT:
                     snake.dirchange(2)
+                    stat = snake.move()
+                    moved = True
                 elif event.key == pygame.K_LEFT:
                     snake.dirchange(-2)
+                    stat = snake.move()
+                    moved = True
                 elif event.key == pygame.K_DOWN:
                     snake.dirchange(1)
+                    stat = snake.move()
+                    moved = True
                 elif event.key == pygame.K_UP:
                     snake.dirchange(-1)
-        if not snake.move():
+                    stat = snake.move()
+                    moved = True
+                elif event.key == pygame.K_SPACE:
+                    PORTALS = not PORTALS
+        if not moved:
+            stat = snake.move()
+        if not stat:
+            run = False
+            break
+        board.update_score(score)
+        if score == N*N-2:
+            print("Congratulations, you won!")
+            time.sleep(2)
             run = False
             break
         pygame.display.update()
-    print("Game over!")
+    print(f"Game over! Final score: {score}")
     pygame.quit()
     return
 
