@@ -5,14 +5,15 @@ from time import sleep
 pygame.font.init()
 
 
-N = 25
-WIDTH, HEIGHT = 1000, 1000
+N = 16
+WIDTH, HEIGHT = 800, 800
 WIDTH, HEIGHT = WIDTH + (N - WIDTH % N), HEIGHT + (N - HEIGHT % N) # Fix borders
 w, h = WIDTH // N, HEIGHT // N
 POSX, POSY = 0, 0
 win = None # Window, initialized later
 SNAKEBORDERCOLOR = SNAKEBORDER = "#12653e"
 BORDER = True
+BORDERSIZE = 1 if N > 60 else 2 if N > 35 else 3
 SNAKECOLOR = SNAKE = "#42f54e"
 WINCOLOR = "#fcba03"
 WINBORDER = "#ad7f00"
@@ -23,9 +24,9 @@ BG = "black"
 FONT = pygame.font.SysFont("comicsans", 20)
 FONTCOLOR = "white"
 
+ADMIN = True
 START_DIR = -1
 PORTALS = True
-ADMIN = True
 DOUBLEFOOD = 15 + N
 TRIPLEFOOD = 100 + N
 WIN_REQ = N*N-1
@@ -42,7 +43,7 @@ class Cell:
             if self.snake:
                 pygame.draw.rect(win, SNAKE, (POSX + self.x * w, POSY + self.y * h, w, h))
                 BORDER and pygame.draw.rect(
-                    win, SNAKEBORDER, (POSX + self.x * w, POSY + self.y * h, w, h), 3
+                    win, SNAKEBORDER, (POSX + self.x * w, POSY + self.y * h, w, h), BORDERSIZE
                     )
             elif self.food:
                 pygame.draw.rect(win, FOOD, (POSX + self.x * w, POSY + self.y * h, w, h))
@@ -93,6 +94,9 @@ class Board:
     def update_score(self, score: int):
         a = 4 if N >= 4 else N
         b = 2 if N >= 2 else N
+        if N > 25:
+            b = N//10
+            a = N//5
         for i in range(a):
             for j in range(b):
                 self.grid[i][j].draw()
@@ -180,95 +184,134 @@ class Snake:
         if self.size == DOUBLEFOOD : self.board.food += 1
         if self.size == TRIPLEFOOD: self.board.food += 1
 
+class Game:
+    def __init__(self):
+        global win
+        win = pygame.display.set_mode((WIDTH, HEIGHT))
+        pygame.display.set_caption("Snake")
+        self.board = Board()
+        self.snake = Snake(self.board, N//2, N//2)
+        self.board.snake = self.snake
+        self.clock = pygame.time.Clock()
+        self.run = True
+        self.paused = False
+        self.speed = 10 if N > 20 else 8 if N > 10 else 6
+        self.score = 0
+        self.board.spawn_food()
+
+    def restart(self):
+        self.__init__()
+
+    def main_loop(self):
+        global BORDER, PORTALS
+        self.board.draw()
+        self.board.update_score(1)
+        if self.snake.inv:
+            global SNAKE, SNAKEBORDER
+            SNAKE = INVINCIBILITY
+            SNAKEBORDER = INVINCIBILITY_BORDER
+        while self.run:
+            self.clock.tick(self.speed)
+            moved = False
+            self.score = self.snake.size
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.run = False
+                    break
+                elif event.type == pygame.KEYDOWN:
+                    if (event.key == pygame.K_RIGHT or event.key == pygame.K_d) and not self.paused:
+                        # Move right
+                        self.snake.dirchange(2)
+                        stat = self.snake.move()
+                        moved = True
+                    elif (event.key == pygame.K_LEFT or event.key == pygame.K_a) and not self.paused:
+                        # Move left
+                        self.snake.dirchange(-2)
+                        stat = self.snake.move()
+                        moved = True
+                    elif (event.key == pygame.K_DOWN or event.key == pygame.K_s) and not self.paused:
+                        # Move down
+                        self.snake.dirchange(1)
+                        stat = self.snake.move()
+                        moved = True
+                    elif (event.key == pygame.K_UP or event.key == pygame.K_w) and not self.paused:
+                        # Move up
+                        self.snake.dirchange(-1)
+                        stat = self.snake.move()
+                        moved = True
+                    elif event.key == pygame.K_SPACE and ADMIN:
+                        # Toggle portals
+                        PORTALS = not PORTALS
+                        print(f"Portals toggled {'ON' if PORTALS else 'OFF'}")
+                    elif event.key == pygame.K_i and ADMIN:
+                        # Toggle invincibility
+                        self.snake.inv = not self.snake.inv
+                        SNAKE = INVINCIBILITY if self.snake.inv else SNAKECOLOR
+                        SNAKEBORDER = INVINCIBILITY_BORDER if self.snake.inv else SNAKEBORDERCOLOR
+                        if ADMIN: print(f"Invincibility toggled {'ON' if self.snake.inv else 'OFF'}")
+                    elif event.key == pygame.K_k and ADMIN:
+                        # Increase snake size
+                        self.snake.eat(self.snake.head, True)
+                    elif event.key == pygame.K_l and self.snake.size > 1 and ADMIN:
+                        # Decrease snake size
+                        self.snake.size -= 1
+                        t = self.snake.body.popleft()
+                        t.snake = False
+                        t.dir = 0
+                        t.draw()
+                        self.snake.tail = self.snake.body[0]
+                    elif event.key == pygame.K_o and ADMIN:
+                        # Increase game speed
+                        self.speed += 1
+                    elif event.key == pygame.K_p and self.speed > 1 and ADMIN:
+                        # Decrease game speed
+                        self.speed -= 1
+                    elif event.key == pygame.K_v and ADMIN:
+                        # Check game speed
+                        print(f"Current game speed: {self.speed}")
+                    elif event.key == pygame.K_b and ADMIN:
+                        # Toggle border for the snake
+                        BORDER = not BORDER
+                    elif event.key == pygame.K_m and ADMIN:
+                        # Instant win
+                        self.snake.size = WIN_REQ
+                        self.snake.inv = True
+                    elif event.key == pygame.K_r:
+                        # Restart the game
+                        self.restart()
+                        if ADMIN: print("Restarted.")
+                    elif event.key == pygame.K_ESCAPE:
+                        # Pause
+                        self.paused = not self.paused
+
+            if not self.paused:
+                if not moved:
+                    stat = self.snake.move()
+                if self.score == WIN_REQ:
+                    self.score += 1
+                    self.board.update_score(self.score)
+                    for c in reversed(self.snake.body):
+                        c.draw(WINCOLOR)
+                        if BORDER: c.draw(WINBORDER, BORDERSIZE)
+                        pygame.display.update()
+                        sleep(round(3/len(self.snake.body), 2))
+                    self.run = False
+                    break
+                if not stat:
+                    self.run = False
+                    break
+                self.board.update_score(self.score)
+                pygame.display.update()
+        print(f"Game over! Final score: {self.score}")
+        if self.score >= WIN_REQ: print(f"Congratulations, you won in the {N}x{N} board!")
+        pygame.quit()
 
 def main():
-    global PORTALS, BORDER, SNAKE, SNAKEBORDER, win
-    win = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Snake")
-    board = Board()
-    snake = Snake(board, N//2, N//2)
-    board.snake = snake
-    clock = pygame.time.Clock()
-    run = True
-    board.spawn_food()
-    board.draw()
-    speed = 10 if N > 20 else 8 if N > 10 else 6
-    board.update_score(1)
-    score = 0
-    if snake.inv: 
-        SNAKE = INVINCIBILITY
-        SNAKEBORDER = INVINCIBILITY_BORDER
-    while run:
-        clock.tick(speed)
-        moved = False
-        score = snake.size
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT: 
-                run = False
-                break
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_RIGHT or event.key == pygame.K_d:
-                    snake.dirchange(2)
-                    stat = snake.move()
-                    moved = True
-                elif event.key == pygame.K_LEFT or event.key == pygame.K_a:
-                    snake.dirchange(-2)
-                    stat = snake.move()
-                    moved = True
-                elif event.key == pygame.K_DOWN or event.key == pygame.K_s:
-                    snake.dirchange(1)
-                    stat = snake.move()
-                    moved = True
-                elif event.key == pygame.K_UP or event.key == pygame.K_w:
-                    snake.dirchange(-1)
-                    stat = snake.move()
-                    moved = True
-                elif event.key == pygame.K_SPACE and ADMIN:
-                    PORTALS = not PORTALS
-                    print(f"Portals toggled {"ON" if PORTALS else "OFF"}")
-                elif event.key == pygame.K_i and ADMIN:
-                    snake.inv = not snake.inv
-                    SNAKE = INVINCIBILITY if snake.inv else SNAKECOLOR
-                    SNAKEBORDER = INVINCIBILITY_BORDER if snake.inv else SNAKEBORDERCOLOR
-                    print(f"Invincibility toggled {"ON" if snake.inv else "OFF"}")
-                elif event.key == pygame.K_k and ADMIN:
-                    snake.eat(snake.head, True)
-                elif event.key == pygame.K_l and snake.size > 1 and ADMIN:
-                    snake.size -= 1
-                    t = snake.body.popleft()
-                    t.snake = False
-                    t.dir = 0
-                    t.draw()
-                    snake.tail = snake.body[0]
-                elif event.key == pygame.K_o and ADMIN:
-                    speed += 1
-                elif event.key == pygame.K_p and speed > 1 and ADMIN:
-                    speed -= 1
-                elif event.key == pygame.K_b and ADMIN:
-                    BORDER = not BORDER
-                elif event.key == pygame.K_m and ADMIN:
-                    snake.size = WIN_REQ
-                    snake.inv = True
-
-        if not moved:
-            stat = snake.move()
-        if score == WIN_REQ:
-            print("Congratulations, you won!")
-            for c in reversed(snake.body):
-                c.draw(WINCOLOR)
-                c.draw(WINBORDER, 3)
-                pygame.display.update()
-                sleep(round(3/len(snake.body), 2))
-            run = False
-            break
-        if not stat:
-            run = False
-            break
-        board.update_score(score)
-        pygame.display.update()
-    print(f"Game over! Final score: {score}")
-    pygame.quit()
-    return
+    print("Keybinds: WASD (or arrow keys) - Move, R - Restart, ESC - Pause.")
+    if ADMIN:
+        print("\tI: Invincibiility | K/L: +/-1 score | O/P: +/-1 speed | M: Instant win")
+    game = Game()
+    game.main_loop()
 
 if __name__ == "__main__":
     main()
