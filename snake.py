@@ -4,15 +4,20 @@ from collections import deque
 from time import sleep
 pygame.font.init()
 
-N = 15
-WIDTH, HEIGHT = 800 + (N - 800%N), 800 + (N - 800%N)
+
+N = 25
+WIDTH, HEIGHT = 1000, 1000
+WIDTH, HEIGHT = WIDTH + (N - WIDTH % N), HEIGHT + (N - HEIGHT % N) # Fix borders
 w, h = WIDTH // N, HEIGHT // N
 POSX, POSY = 0, 0
-win = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Snake")
-SNAKEBORDER = "#12653e"
+win = None # Window, initialized later
+SNAKEBORDERCOLOR = SNAKEBORDER = "#12653e"
 BORDER = True
-SNAKE = "#42f54e"
+SNAKECOLOR = SNAKE = "#42f54e"
+WINCOLOR = "#fcba03"
+WINBORDER = "#ad7f00"
+INVINCIBILITY = "white"
+INVINCIBILITY_BORDER = "#bababa"
 FOOD = "red"
 BG = "black"
 FONT = pygame.font.SysFont("comicsans", 20)
@@ -23,25 +28,31 @@ PORTALS = True
 ADMIN = True
 DOUBLEFOOD = 15 + N
 TRIPLEFOOD = 100 + N
+WIN_REQ = N*N-1
 
 class Cell:
-    def __init__(self, x, y):
+    def __init__(self, x: int, y: int):
         self.x, self.y = x, y
         self.snake = False
         self.food = False
         self.dir = 0
     
-    def draw(self, color = None):
+    def draw(self, color: str = None, border: int = None):
         if not color:
             if self.snake:
                 pygame.draw.rect(win, SNAKE, (POSX + self.x * w, POSY + self.y * h, w, h))
-                BORDER and pygame.draw.rect(win, SNAKEBORDER, (POSX + self.x * w, POSY + self.y * h, w, h), 3)
+                BORDER and pygame.draw.rect(
+                    win, SNAKEBORDER, (POSX + self.x * w, POSY + self.y * h, w, h), 3
+                    )
             elif self.food:
                 pygame.draw.rect(win, FOOD, (POSX + self.x * w, POSY + self.y * h, w, h))
             else:
                 pygame.draw.rect(win, BG, (POSX + self.x * w, POSY + self.y * h, w, h))
+        elif border:
+            pygame.draw.rect(win, color, (POSX + self.x * w, POSY + self.y * h, w, h), border)
         else:
             pygame.draw.rect(win, color, (POSX + self.x * w, POSY + self.y * h, w, h))
+
 
 class Board:
     def __init__(self):
@@ -50,7 +61,7 @@ class Board:
         self.food = 1
         self.currentfood = 0
 
-    def makegrid(self):
+    def makegrid(self) -> list:
         grid = [0 for _ in range(N)]
         for i in range(N):
             grid[i] = [Cell(i,j) for j in range(N)]
@@ -68,15 +79,18 @@ class Board:
         options = []
         for i in range(N):
             for j in range(N):
-                if not self.grid[i][j].snake and not self.grid[i][j].food: options.append(self.grid[i][j])
+                if not self.grid[i][j].snake and not self.grid[i][j].food: 
+                    options.append(self.grid[i][j])
         for _ in range(self.food-self.currentfood):
             try: x = random.choice(options)
-            except: break
+            except: 
+                if ADMIN: print("ADMIN log: Error - unable to spawn food.")
+                return
             options.remove(x)
             x.food = True
             x.draw()
         self.currentfood = self.food
-    def update_score(self, score):
+    def update_score(self, score: int):
         a = 4 if N >= 4 else N
         b = 2 if N >= 2 else N
         for i in range(a):
@@ -86,7 +100,7 @@ class Board:
         win.blit(sc, (5, 5))
 
 class Snake:
-    def __init__(self, board, x, y):
+    def __init__(self, board: Board, x: int , y: int):
         self.board = board
         self.head = board.grid[x][y]
         self.head.snake = True
@@ -99,11 +113,11 @@ class Snake:
         self.directs = {1: (0,1), -1: (0,-1), 2: (1,0), -2: (-1,0)}
         self.inv = False
 
-    def dirchange(self, direct = START_DIR):
+    def dirchange(self, direct: int = START_DIR) -> None:
         if direct != -self.direct:
             self.direct = direct
 
-    def move(self):
+    def move(self) -> bool:
         x,y = self.directs[self.direct]
         next_x, next_y = self.head.x + x, self.head.y + y
         if not (0 <= next_x < N and 0 <= next_y < N):
@@ -137,7 +151,7 @@ class Snake:
         self.head.draw()
         return True
 
-    def eat(self, food, cheat = False):
+    def eat(self, food: Cell, cheat: bool = False) -> None:
         if not cheat:
             food.food = False
             self.board.currentfood -= 1
@@ -168,7 +182,9 @@ class Snake:
 
 
 def main():
-    global PORTALS, BORDER
+    global PORTALS, BORDER, SNAKE, SNAKEBORDER, win
+    win = pygame.display.set_mode((WIDTH, HEIGHT))
+    pygame.display.set_caption("Snake")
     board = Board()
     snake = Snake(board, N//2, N//2)
     board.snake = snake
@@ -179,6 +195,9 @@ def main():
     speed = 10 if N > 20 else 8 if N > 10 else 6
     board.update_score(1)
     score = 0
+    if snake.inv: 
+        SNAKE = INVINCIBILITY
+        SNAKEBORDER = INVINCIBILITY_BORDER
     while run:
         clock.tick(speed)
         moved = False
@@ -209,6 +228,8 @@ def main():
                     print(f"Portals toggled {"ON" if PORTALS else "OFF"}")
                 elif event.key == pygame.K_i and ADMIN:
                     snake.inv = not snake.inv
+                    SNAKE = INVINCIBILITY if snake.inv else SNAKECOLOR
+                    SNAKEBORDER = INVINCIBILITY_BORDER if snake.inv else SNAKEBORDERCOLOR
                     print(f"Invincibility toggled {"ON" if snake.inv else "OFF"}")
                 elif event.key == pygame.K_k and ADMIN:
                     snake.eat(snake.head, True)
@@ -225,25 +246,29 @@ def main():
                     speed -= 1
                 elif event.key == pygame.K_b and ADMIN:
                     BORDER = not BORDER
+                elif event.key == pygame.K_m and ADMIN:
+                    snake.size = WIN_REQ
+                    snake.inv = True
 
         if not moved:
             stat = snake.move()
+        if score == WIN_REQ:
+            print("Congratulations, you won!")
+            for c in reversed(snake.body):
+                c.draw(WINCOLOR)
+                c.draw(WINBORDER, 3)
+                pygame.display.update()
+                sleep(round(3/len(snake.body), 2))
+            run = False
+            break
         if not stat:
             run = False
             break
         board.update_score(score)
-        if score == N*N:
-            print("Congratulations, you won!")
-            for c in reversed(snake.body):
-                c.draw("white")
-                pygame.display.update()
-                sleep(0.05)
-            run = False
-            break
         pygame.display.update()
     print(f"Game over! Final score: {score}")
     pygame.quit()
     return
 
-
-main()
+if __name__ == "__main__":
+    main()
