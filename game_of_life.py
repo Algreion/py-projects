@@ -1,6 +1,6 @@
 import pygame
 
-N = 25
+N = 20
 WIDTH, HEIGHT = 800, 800
 WIDTH, HEIGHT = WIDTH + (N - WIDTH % N), HEIGHT + (N - HEIGHT % N)
 w, h = WIDTH//N, HEIGHT//N
@@ -64,7 +64,12 @@ class Grid:
         pygame.display.update()
 
     def savestate(self):
-        self.start = [[1 if self.grid[i][j].alive else 0 for j in range(N)] for i in range(N)]
+        self.start = []
+        for i in range(N):
+            row = []
+            for j in range(N):
+                row.append(1) if self.grid[i][j].alive else row.append(0)
+            self.start.append(row)
     
     def override(self):
         for i in range(N):
@@ -73,10 +78,12 @@ class Grid:
         for i in range(N):
             for j in range(N):
                 self.grid[i][j].getneighbors(self)
-    def neighbors_update(self):
+    def update(self):
+        self.cells = 0
         for i in range(N):
             for j in range(N):
                 self.grid[i][j].getneighbors(self)
+                if self.grid[i][j].alive: self.cells += 1
     def touch(self, pos: tuple):
         x, y = pos
         cell = self.grid[x // w][y // h]
@@ -84,6 +91,7 @@ class Grid:
             cell.alive = True
             cell.draw()
             cell.giveneighbors(self)
+            self.cells += 1
             pygame.display.update()
     def kill(self, pos: tuple):
         x, y = pos
@@ -92,23 +100,32 @@ class Grid:
             cell.alive = False
             cell.draw()
             cell.giveneighbors(self)
+            self.cells -= 1
             pygame.display.update()
     def info(self, pos: tuple):
         x, y = pos
         cell = self.grid[x // w][y // h]
         print(f"Cell {cell.x},{cell.y} | {'alive' if cell.alive else 'dead'} | {cell.neighbors} neighbors")
     def generation(self):
+        live = []
+        dead = []
         for i in range(N):
             for j in range(N):
                 c = self.grid[i][j]
                 if c.neighbors == 3 and not c.alive: 
-                    c.alive = True
-                    c.draw()
-                    c.giveneighbors(self)
+                    live.append(c)
                 elif (c.neighbors > 3 or c.neighbors < 2) and c.alive:
-                    c.alive = False
-                    c.draw()
-                    c.giveneighbors(self)
+                    dead.append(c)
+        for c in live:
+            c.alive = True
+            c.draw()
+            c.giveneighbors(self)
+            self.cells += 1
+        for c in dead:
+            c.alive = False
+            c.draw()
+            c.giveneighbors(self)
+            self.cells -= 1
         self.ticks += 1
 
 class Game():
@@ -122,13 +139,14 @@ class Game():
         self.clock = pygame.time.Clock()
         self.speed = 3
         self.start = []
+        self.paused = False
 
     def restart(self):
         self.__init__()
 
     def mainloop(self):
         self.grid.draw()
-        self.grid.neighbors_update()
+        self.grid.update()
         while self.drawing:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -151,6 +169,7 @@ class Game():
                         self.drawing = False
                         self.run = True
                         self.grid.savestate()
+                        self.paused = False
                         break
                     elif event.key == pygame.K_i:
                         pos = pygame.mouse.get_pos()
@@ -158,6 +177,20 @@ class Game():
                             self.grid.info(pos)
                         except (AttributeError,IndexError):
                             continue
+                    elif event.key == pygame.K_c:
+                        for i in range(N):
+                            for j in range(N):
+                                self.grid.grid[i][j].alive = False
+                        self.grid.update()
+                        self.grid.draw()
+                        pygame.display.update()
+                    elif event.key == pygame.K_p:
+                        print(f"Population: {self.grid.cells}")
+                    elif event.key == pygame.K_s:
+                        # Starting condition
+                        self.grid.savestate()
+                        for row in self.grid.start:
+                            print(row)
 
         while self.run:
             self.clock.tick(self.speed)
@@ -171,19 +204,21 @@ class Game():
                         self.run = False
                         self.drawing = True
                         self.grid.ticks = 0
+                        self.paused = True
                         break
                     elif event.key == pygame.K_x:
                         self.run = False
                         self.drawing = True
                         self.grid.ticks = 0
                         self.grid.override()
+                        self.paused = True
                     elif event.key == pygame.K_i:
                         pos = pygame.mouse.get_pos()
                         try:
                             self.grid.info(pos)
                         except (AttributeError,IndexError):
                             continue
-            self.grid.generation()
+            if not self.paused: self.grid.generation()
             pygame.display.update()
         return True
 
