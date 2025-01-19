@@ -2,7 +2,7 @@ import pygame
 from random import randint
 
 LOAD = False # Load initial state from a file (insert file name in CUSTOM)
-CUSTOM = "maze2.txt"
+CUSTOM = "life.txt"
 if LOAD: LOAD = CUSTOM
 
 N = 25
@@ -22,11 +22,16 @@ CELL_BORDER = "#a10505"
 BG = "white"
 BG_BORDER = "#827979"
 BORDERSIZE = 1
+DEFAULT_THEME = 0
+
 
 DEFAULT_SPEED = 3
+
+# Default: 4,1,3 | Maze-gen: 5,1,3
 OVERPOPULATION = 4
 UNDERPOPULATION = 1
 REPRODUCTION = 3
+DIRECTIONS = [(0,1),(1,0),(-1,0),(0,-1),(1,1),(-1,-1),(-1,1),(1,-1)]
 
 N_THEMES = 6
 def theme(n: int = 0):
@@ -69,7 +74,6 @@ class Cell:
         self.x, self.y = x, y
         self.alive = False
         self.neighbors = 0
-        self.directions = [(0,1),(1,0),(-1,0),(0,-1),(1,1),(-1,-1),(-1,1),(1,-1)]
         self.pos = (POSX + self.x * w, POSY + self.y * h, w, h)
 
     def draw(self, color: str = None, border: int = 0):
@@ -85,13 +89,13 @@ class Cell:
 
     def get_neighbors(self, board):
         n = 0
-        for dx,dy in self.directions:
+        for dx,dy in DIRECTIONS:
             x, y = self.x+dx, self.y+dy
             if 0<=x<N and 0<=y<N and board.grid[x][y].alive: n += 1
         self.neighbors = n
     
     def update_neighbors(self, board):
-        for dx,dy in self.directions:
+        for dx,dy in DIRECTIONS:
             x, y = self.x+dx, self.y+dy
             if 0<=x<N and 0<=y<N:
                 c = board.grid[x][y]
@@ -103,7 +107,7 @@ class Grid:
         self.grid = self.makegrid()
         self.cells = 0
         self.ticks = 0
-        self.start = [[0 for i in range(N)] for j in range(N)]
+        self.start = [[0 for _ in range(N)] for _ in range(N)]
 
     def makegrid(self) -> list:
         grid = [0 for _ in range(N)]
@@ -164,7 +168,7 @@ class Grid:
     def info(self, pos: tuple):
         x, y = pos
         cell = self.grid[x // w][y // h]
-        print(f"Cell {cell.x},{cell.y} | {'alive' if cell.alive else 'dead'} | {cell.neighbors} neighbors")
+        print(f"Cell {cell.x},{cell.y} | {'Alive' if cell.alive else 'Dead'} | {cell.neighbors} neighbors")
 
     def generation(self):
         live = []
@@ -210,7 +214,8 @@ class Game():
         self.speed = DEFAULT_SPEED
         self.start = []
         self.paused = False
-        self.theme = 0
+        self.theme = DEFAULT_THEME
+        theme(self.theme)
         if LOAD:
             self.grid.loadfile(LOAD)
             self.grid.override()
@@ -240,7 +245,7 @@ class Game():
                     if event.key == pygame.K_q:
                         pygame.quit()
                         return False
-                    elif event.key == pygame.K_SPACE or event.key == pygame.K_q:
+                    elif event.key == pygame.K_SPACE:
                         self.drawing = False
                         self.run = True
                         self.grid.savestate()
@@ -274,8 +279,8 @@ class Game():
                     elif event.key == pygame.K_h:
                         print("""Space: Start/stop | X: Return to initial state | I: Cell info
                     P: General info | L/K: +/- speed | S: Save grid state | B: Toggle border
-                    C: Clear board | D: Change theme | Q: Quit""")
-                    elif event.key == pygame.K_d:
+                    C: Clear board | T: Change theme | Q: Quit""")
+                    elif event.key == pygame.K_t:
                         self.theme = (self.theme + 1) % N_THEMES
                         theme(self.theme)
                         self.grid.draw()
@@ -325,8 +330,9 @@ class Game():
                         self.grid.draw()
                     elif event.key == pygame.K_h:
                         print("""Space: Start/stop | X: Return to initial state | I: Cell info
-                        P: General info | L/K: +/- speed | S: Save grid state | B: Toggle border | D: Change theme""")
-                    elif event.key == pygame.K_d:
+                    P: General info | L/K: +/- speed | S: Save grid state | B: Toggle border
+                    C: Clear board | T: Change theme | Q: Quit""")
+                    elif event.key == pygame.K_t:
                         self.theme = (self.theme + 1) % N_THEMES
                         theme(self.theme)
                         self.grid.draw()
