@@ -17,6 +17,8 @@ BORDERSIZE = 1 if N > 60 else 2 if N > 35 else 3
 SNAKECOLOR = SNAKE = "#42f54e"
 WINCOLOR = "#fcba03"
 WINBORDER = "#ad7f00"
+LOSECOLOR = "#700000"
+LOSEBORDER = "#240000"
 INVINCIBILITY = "white"
 INVINCIBILITY_BORDER = "#bababa"
 FOOD = "red"
@@ -27,8 +29,8 @@ FONTCOLOR = "white"
 ADMIN = True
 START_DIR = -1
 PORTALS = True
-DOUBLEFOOD = 15 + N
-TRIPLEFOOD = 100 + N
+DOUBLEFOOD = 50 + N
+TRIPLEFOOD = 150 + N
 WIN_REQ = N*N-1
 
 class Cell:
@@ -38,7 +40,7 @@ class Cell:
         self.food = False
         self.dir = 0
     
-    def draw(self, color: str = None, border: int = None):
+    def draw(self, color: str = None, border: int = 0):
         if not color:
             if self.snake:
                 pygame.draw.rect(win, SNAKE, (POSX + self.x * w, POSY + self.y * h, w, h))
@@ -49,10 +51,8 @@ class Cell:
                 pygame.draw.rect(win, FOOD, (POSX + self.x * w, POSY + self.y * h, w, h))
             else:
                 pygame.draw.rect(win, BG, (POSX + self.x * w, POSY + self.y * h, w, h))
-        elif border:
-            pygame.draw.rect(win, color, (POSX + self.x * w, POSY + self.y * h, w, h), border)
         else:
-            pygame.draw.rect(win, color, (POSX + self.x * w, POSY + self.y * h, w, h))
+            pygame.draw.rect(win, color, (POSX + self.x * w, POSY + self.y * h, w, h), border)
 
 
 class Board:
@@ -299,6 +299,11 @@ class Game:
                     break
                 if not stat:
                     self.run = False
+                    for c in reversed(self.snake.body):
+                        c.draw(LOSECOLOR)
+                        if BORDER: c.draw(LOSEBORDER, BORDERSIZE)
+                        pygame.display.update()
+                        sleep(round(1/len(self.snake.body), 2))
                     break
                 self.board.update_score(self.score)
                 pygame.display.update()
