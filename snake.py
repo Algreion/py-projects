@@ -3,7 +3,9 @@ import random
 from collections import deque
 from time import sleep
 pygame.font.init()
+pygame.mixer.init()
 
+NOM = pygame.mixer.Sound("./sounds/nom.mp3")
 
 N = 16
 WIDTH, HEIGHT = 800, 800
@@ -25,6 +27,7 @@ FOOD = "red"
 BG = "black"
 FONT = pygame.font.SysFont("comicsans", 20)
 FONTCOLOR = "white"
+SOUND = True
 
 ADMIN = True
 START_DIR = -1
@@ -136,7 +139,8 @@ class Snake:
         if next.snake and not self.inv:
             return False
         elif next.food:
-            self.eat(next)
+            if SOUND: self.eat(next)
+            else: self.eat(next,sound=False)
 
         # Tail movement
         t = self.body.popleft()
@@ -155,7 +159,7 @@ class Snake:
         self.head.draw()
         return True
 
-    def eat(self, food: Cell, cheat: bool = False) -> None:
+    def eat(self, food: Cell, cheat: bool = False, sound = True) -> None:
         if not cheat:
             food.food = False
             self.board.currentfood -= 1
@@ -181,6 +185,7 @@ class Snake:
         self.body.appendleft(new)
         new.snake = True
         new.draw()
+        if sound: pygame.mixer.Sound.play(NOM)
         if self.size == DOUBLEFOOD : self.board.food += 1
         if self.size == TRIPLEFOOD: self.board.food += 1
 
@@ -203,7 +208,7 @@ class Game:
         self.__init__()
 
     def main_loop(self):
-        global BORDER, PORTALS
+        global BORDER, PORTALS,SOUND
         self.board.draw()
         self.board.update_score(1)
         if self.snake.inv:
@@ -251,7 +256,7 @@ class Game:
                         if ADMIN: print(f"Invincibility toggled {'ON' if self.snake.inv else 'OFF'}")
                     elif event.key == pygame.K_k and ADMIN:
                         # Increase snake size
-                        self.snake.eat(self.snake.head, True)
+                        self.snake.eat(self.snake.head, True, False)
                     elif event.key == pygame.K_l and self.snake.size > 1 and ADMIN:
                         # Decrease snake size
                         self.snake.size -= 1
@@ -260,6 +265,8 @@ class Game:
                         t.dir = 0
                         t.draw()
                         self.snake.tail = self.snake.body[0]
+                    elif event.key == pygame.K_m:
+                        SOUND = not SOUND
                     elif event.key == pygame.K_o and ADMIN:
                         # Increase game speed
                         self.speed += 1
@@ -272,7 +279,7 @@ class Game:
                     elif event.key == pygame.K_b and ADMIN:
                         # Toggle border for the snake
                         BORDER = not BORDER
-                    elif event.key == pygame.K_m and ADMIN:
+                    elif event.key == pygame.K_b and ADMIN:
                         # Instant win
                         self.snake.size = WIN_REQ
                         self.snake.inv = True
@@ -295,6 +302,7 @@ class Game:
                         if BORDER: c.draw(WINBORDER, BORDERSIZE)
                         pygame.display.update()
                         sleep(round(3/len(self.snake.body), 2))
+                        
                     self.run = False
                     break
                 if not stat:
@@ -312,9 +320,9 @@ class Game:
         pygame.quit()
 
 def main():
-    print("Keybinds: WASD (or arrow keys) - Move, R - Restart, ESC - Pause.")
+    print("Keybinds: WASD (or arrow keys) - Move, R - Restart, ESC - Pause, M - Mute")
     if ADMIN:
-        print("\tI: Invincibiility | K/L: +/-1 score | O/P: +/-1 speed | M: Instant win")
+        print("\tI: Invincibiility | K/L: +/-1 score | O/P: +/-1 speed | B: Instant win")
     game = Game()
     game.main_loop()
 
