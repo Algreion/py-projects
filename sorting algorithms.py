@@ -74,6 +74,35 @@ def pure_selection_sort(t): # Made all by myself!
                 index = i
         res.append(t.pop(index))
     return n
+def pure_quicksort(t):
+
+    def quicksort(start, end):
+        nonlocal t
+        if start < 0 or end >= len(t) or start >= end: return
+
+        p = start + (end-start)//2
+        t[start], t[p], t[end] = sorted([t[start], t[p], t[end]])
+        p = sort(p, start, end)
+        quicksort(start, p-1)
+        quicksort(p+1,end)
+
+    def sort(p, l, r):
+        nonlocal t
+        pivot = t[p]
+        while l <= r:
+            while t[l] < pivot: l += 1
+            while t[r] > pivot: r -= 1
+            if l <= r:
+                t[l], t[r] = t[r], t[l]
+                l += 1
+                r -= 1
+        return l - 1
+
+    start = 0
+    end = len(t)-1
+    quicksort(start,end)
+    return t
+
 def sort_tester(func,iterations=100,size=100,result=False):
     global x
     step_list=[]
@@ -141,10 +170,10 @@ RECT_COLOR = "cadetblue1"
 SORTED_COLOR = "white"
 TXT_COLOR = "white"
 BG = "black"
-TIME = 0.01
+TIME = 0.001
 local = os.path.dirname(__file__)
-BEEP = pygame.mixer.Sound(os.path.join(local, "blip.wav"))
-WOP = pygame.mixer.Sound(os.path.join(local, "wop.wav"))
+BEEP = pygame.mixer.Sound(os.path.join(local, "sounds/blip.wav"))
+WOP = pygame.mixer.Sound(os.path.join(local, "sounds/wop.wav"))
 
 def generate_array():
     arr = list(range(1, TOTAL_RECTS + 1))
@@ -187,7 +216,7 @@ def bubblesort(win, t, sound):
                 t[i],t[i+1] = t[i+1],t[i]
                 draw(win, t, False, sorted_indices, sort="Bubblesort")
                 time.sleep(TIME)
-            sorted_indices.remove(i)
+            sorted_indices.discard(i)
         if sound: pygame.mixer.Sound.play(BEEP)
         sorted_indices.add(len(t)-iterations)
         iterations += 1
@@ -252,8 +281,7 @@ def mergesort(win, arr, sound, start=None, end=None):
         left = arr[start:mid]
         right = arr[mid:end]
         i = start
-        j = 0
-        k = 0
+        j, k = 0, 0
         
         while j < len(left) and k < len(right): # Put the smallest in the correct position in array
             if left[j] <= right[k]:
