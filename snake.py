@@ -279,7 +279,7 @@ class Game:
                     elif event.key == pygame.K_b and ADMIN:
                         # Toggle border for the snake
                         BORDER = not BORDER
-                    elif event.key == pygame.K_b and ADMIN:
+                    elif event.key == pygame.K_x and ADMIN:
                         # Instant win
                         self.snake.size = WIN_REQ
                         self.snake.inv = True
@@ -322,7 +322,7 @@ class Game:
 def main():
     print("Keybinds: WASD (or arrow keys) - Move, R - Restart, ESC - Pause, M - Mute")
     if ADMIN:
-        print("\tI: Invincibiility | K/L: +/-1 score | O/P: +/-1 speed | B: Instant win")
+        print("\tI: Invincibiility | K/L: +/-1 score | O/P: +/-1 speed | X: Instant win")
     game = Game()
     game.main_loop()
 
