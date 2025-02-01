@@ -13,17 +13,48 @@ class Value:
     def __str__(self):
         return str(self.data)
     def __add__(self, other):
+        other = other if isinstance(other,Value) else Value(other)
         out = Value(self.data + other.data, (self, other), '+')
         def _backward(): # Closure, applied during backpropagation
-            self.grad = 1.0 * out.grad # dx of a+b = 1
-            other.grad = 1.0 * out.grad
+            self.grad += 1.0 * out.grad # dx of a+b = 1
+            other.grad += 1.0 * out.grad
         out._backward = _backward
         return out
+    def __radd__(self, other): # other + self
+        return self + other
+    def __neg__(self):
+        return self * -1
+    def __sub__(self, other):
+        return self + (-other)
+    def __rsub__(self, other):
+        return (-self) + other
     def __mul__(self, other):
+        other = other if isinstance(other,Value) else Value(other)
         out = Value(self.data * other.data, (self, other), '*')
         def _backward():
-            self.grad = other.data * out.grad # dx of a*b = a
-            other.grad = self.data * out.grad
+            self.grad += other.data * out.grad # dx of a*b = a
+            other.grad += self.data * out.grad
+        out._backward = _backward
+        return out
+    def __rmul__(self, other):
+        return self*other
+    def __pow__(self, number: float):
+        assert isinstance(number, (int, float)), "Supports only ints and floats"
+        out = Value(self.data**number, (self,), f'**{number}')
+        def _backward():
+            self.grad += number * self.data**(number-1) * out.grad
+        out._backward = _backward
+        return out
+    def __truediv__(self, other):
+        return self * other**(-1) # a/b = a * (1/b)
+    def __rtruediv__(self, other):
+        return self**(-1) * other
+
+    def exp(self):
+        x = self.data
+        out = Value(math.exp(x), (self,), 'exp')
+        def _backward():
+            self.grad += out.data * out.grad # dx of e^x = e^x
         out._backward = _backward
         return out
     
@@ -32,11 +63,12 @@ class Value:
         t = math.tanh(x)
         out = Value(t, (self,), 'tanh')
         def _backward():
-            self.grad = (1 - t**2) * out.grad # dx of tanh(a) = 1-tanh(a)^2
+            self.grad += (1 - t**2) * out.grad # dx of tanh(x) = 1-tanh(x)^2
         out._backward = _backward
         return out
     
     def backward(self):
+        """Backpropagation with previous nodes"""
         def topological_sort(root):
             """Adds a node to the list only after all its children have been processed"""
             topo = []
@@ -50,7 +82,7 @@ class Value:
             build_topo(root)
             return topo
         
-        self.grad = 1.0
+        self.grad = 1.0 # Base case
         for node in reversed(topological_sort(self)):
             node._backward()
 
@@ -64,6 +96,7 @@ class Value:
 # dL/dy = 3, dy/dx = 2, then dL/dx = (dL/dy)*(dy/dx)=3*2 = 6 | You know how all nodes impact the final one.
 #* _backward() is a closure to apply local gradient onto previous nodes
 #* In this case, it is applied after a topological sort
+#* We must add the derivatives to the gradient since we have multiple variables.
 
 #* Nudging all values in the direction of their gradient, we increase the final output
 
