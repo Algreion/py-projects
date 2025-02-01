@@ -116,6 +116,10 @@ class Neuron:
         # w * x + b
         activation = sum((w_i*x_i for w_i,x_i in zip(self.w, input)), self.b)
         return activation.tanh()
+    
+    def parameters(self):
+        """Returns all parameters from the neuron"""
+        return self.w + [self.b]
 
 class Layer:
     def __init__(self, nin: int, nout: int):
@@ -135,6 +139,9 @@ class Layer:
         """Returns the activations for all neurons in the layer."""
         out = [n(input) for n in self.neurons]
         return out[0] if len(out) == 1 else out
+    
+    def parameters(self):
+        return [p for n in self for p in n.parameters()]
 
 class MLP:
     def __init__(self, nin: int, nouts: list):
@@ -157,19 +164,36 @@ class MLP:
         res += "\n".join(f"[{" ".join("N" for _ in l.neurons)}]" for l in self.layers[:-1])
         res += f"\n[{" ".join("O" for _ in self[-1].neurons)}]"
         return res
+    
+    def parameters(self):
+        """Total weights and biases of the entire MLP"""
+        return [p for l in self for p in l.parameters()]
 
+def cost(output: list, expected: list):
+    """Computes the cost for a particular result."""
+    return sum((v_e-v_o)**2 for v_o,v_e in zip(output,expected))
 
-def forwardpass():
-    # Start with 2 inputs (-2, 3)
-    # For each Neuron (first):
-    #   Initiate 2 random weights, and a random bias
-    #   Activation = tanh(bias + sum(weight*input for w,i in Inputs))
-    # For each Layer (first):
-    #   Initiate 3 neurons (nout) each with 2 inputs (nin)
-    #   Activation: Calls activation for each neuron and returns it
-    # For the MLP:
-    #   Initiate 3 layers, with input i and neurons i+1
-    x = [-2, 3]
-    mlp = MLP(2, [3,2,1])
-    print(mlp)
-    return mlp(x)
+def test():
+    n = MLP(3,[4,4,1])
+    inputs = [
+        [2.0,3.0,-1.0],
+        [3.0,-1.0,0.5],
+        [0.5,1.0,1.0],
+        [1.0,1.0,-1.0]
+    ]
+    outputs = [1.0,-1.0,-1.0,1.0]
+    for k in range(20):
+        # Forward-pass
+        pred = [n(x) for x in inputs]
+        # loss = sum((yo-ye)**2 for ye,yo in zip(outputs,pred))
+        loss = cost(outputs,pred)
+
+        # Backward-pass
+        loss.backward()
+
+        #Update
+        for p in n.parameters():
+            p.data -= 0.05 * p.grad
+        
+        print(k, loss.data)
+    return n
