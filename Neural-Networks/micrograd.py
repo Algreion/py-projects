@@ -1,8 +1,9 @@
-import math
+from math import tanh,exp
+import random
 
 class Value:
     def __init__(self, data: float, _children=(), _op = ''):
-        """Node for data structure that links operations together (Base for NN)"""
+        """Node for a data structure that links math operations together (Base for NN)"""
         self.data = data
         self.grad = 0 # Derivative (gradient) affecting the final output | Base case (for output) is 1.
         self._backward = lambda: None 
@@ -52,7 +53,7 @@ class Value:
 
     def exp(self):
         x = self.data
-        out = Value(math.exp(x), (self,), 'exp')
+        out = Value(exp(x), (self,), 'exp')
         def _backward():
             self.grad += out.data * out.grad # dx of e^x = e^x
         out._backward = _backward
@@ -60,7 +61,7 @@ class Value:
     
     def tanh(self):
         x = self.data
-        t = math.tanh(x)
+        t = tanh(x)
         out = Value(t, (self,), 'tanh')
         def _backward():
             self.grad += (1 - t**2) * out.grad # dx of tanh(x) = 1-tanh(x)^2
@@ -101,17 +102,74 @@ class Value:
 #* Nudging all values in the direction of their gradient, we increase the final output
 
 
+class Neuron:
+    def __init__(self, nin: int):
+        """Single NN Neuron. nin = Number of expected inputs"""
+        self.w = [Value(random.uniform(-1,1)) for _ in range(nin)] # Random weight for each input
+        self.b = Value(random.uniform(-1,1)) # Random bias for neuron
+    def __repr__(self):
+        return f"Neuron(inputs={len(self.w)},weights=[{",".join(str(round(w.data,2)) for w in self.w)}],bias={self.b.data:.2f})"
+    def __str__(self):
+        return f"N({len(self.w)})"
+    def __call__(self, input: list):
+        """Get the neuron's activation given a group of inputs"""
+        # w * x + b
+        activation = sum((w_i*x_i for w_i,x_i in zip(self.w, input)), self.b)
+        return activation.tanh()
 
-def example_nn():
-    # Input neurons x1,x2
-    x1,x2 = Value(2.0), Value(0.0)
-    # Weights w1, w2
-    w1,w2 = Value(-3.0), Value(1.0)
-    # Bias of the neuron
-    b = Value(6.9)
+class Layer:
+    def __init__(self, nin: int, nout: int):
+        """Layer of NN Neurons.
+        nin = Number of expected inputs.
+        nout = Number of neurons in the layer"""
+        self.neurons = [Neuron(nin) for _ in range(nout)]
+    def __getitem__(self, index: int):
+        return self.neurons[index]
+    def __repr__(self):
+        return f"Layer(inputs={len(self.neurons[0].w)},neurons={len(self.neurons)})"
+    def __str__(self):
+        return f"L({len(self.neurons)})"
+    def __iter__(self):
+        return iter(self.neurons)
+    def __call__(self, input):
+        """Returns the activations for all neurons in the layer."""
+        out = [n(input) for n in self.neurons]
+        return out[0] if len(out) == 1 else out
 
-    x1w1, x2w2 = x1*w1, x2*w2 # Individual edges
-    totalsum = x1w1 + x2w2 # What arrives to the neuron
-    n = totalsum + b # Value of the neuron
-    output = n.tanh() # Final output (true value) of the neuron, activation function
-    return output
+class MLP:
+    def __init__(self, nin: int, nouts: list):
+        """Multi-layer Perceptron.
+        nin is number of inputs.
+        nouts is list for number of neurons per layer"""
+        size = [nin] + nouts
+        self.layers = [Layer(size[i],size[i+1]) for i in range(len(nouts))]
+    def __call__(self, input):
+        for layer in self.layers:
+            input = layer(input) # Iteratively update the result for every layer
+        return input # Result (for final layer, the output)
+    def __getitem__(self, index: int):
+        return self.layers[index]
+    def __repr__(self):
+        return f"MLP(size={len(self.layers)},layers=[{", ".join(str(len(l.neurons)) for l in self.layers)}])"
+    def __str__(self):
+        res = ""
+        res += f"[{" ".join("I" for _ in range(len(self[0][0].w)))}]\n"
+        res += "\n".join(f"[{" ".join("N" for _ in l.neurons)}]" for l in self.layers[:-1])
+        res += f"\n[{" ".join("O" for _ in self[-1].neurons)}]"
+        return res
+
+
+def forwardpass():
+    # Start with 2 inputs (-2, 3)
+    # For each Neuron (first):
+    #   Initiate 2 random weights, and a random bias
+    #   Activation = tanh(bias + sum(weight*input for w,i in Inputs))
+    # For each Layer (first):
+    #   Initiate 3 neurons (nout) each with 2 inputs (nin)
+    #   Activation: Calls activation for each neuron and returns it
+    # For the MLP:
+    #   Initiate 3 layers, with input i and neurons i+1
+    x = [-2, 3]
+    mlp = MLP(2, [3,2,1])
+    print(mlp)
+    return mlp(x)
