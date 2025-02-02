@@ -110,12 +110,15 @@ class Value:
 
 #* Nudging all values in the direction of their gradient, we increase the final output
 
-class Commons:
+class Module:
     def zero_grad(self):
         for p in self.parameters():
             p.grad = 0
 
-class Neuron(Commons):
+    def parameters(self):
+        return []
+
+class Neuron(Module):
     def __init__(self, nin: int):
         """Single NN Neuron. 
         nin = Number of expected inputs
@@ -138,7 +141,7 @@ class Neuron(Commons):
     def _size(self):
         return len(self.parameters())
 
-class Layer(Commons):
+class Layer(Module):
     def __init__(self, nin: int, neurons: int):
         """Layer of NN Neurons.
         nin = Number of expected inputs.
@@ -161,7 +164,7 @@ class Layer(Commons):
     def _size(self):
         return len(self.parameters())
 
-class MLP(Commons):
+class MLP(Module):
     def __init__(self, nin: int, layers: list):
         """Multi-layer Perceptron.
         nin is number of inputs.
@@ -194,18 +197,11 @@ def cost(output: list, expected: list):
     """Computes the cost for a particular result."""
     return sum((v_e-v_o)**2 for v_o,v_e in zip(output,expected))
 
-def test(inputs: list = None, expected: list = None, nout: int = 1, iterations: int = 50, 
+def test(inputs: list, outputs: list, nin: int, nout: int, iterations: int = 50, 
          step: float = 0.05, hidden_layers: list = [4,4], info: bool = True):
-    inputs = [
-        [2.0,3.0,-1.0],
-        [3.0,-1.0,0.5],
-        [0.5,1.0,1.0],
-        [1.0,1.0,-1.0]
-    ] if inputs is None else inputs
-    outputs = [1.0,-1.0,-1.0,1.0] if expected is None else expected
+    
+    n = MLP(nin,hidden_layers+[nout]) # Network
 
-    n = MLP(len(inputs),hidden_layers+[nout]) # Network
-    print(n)
     for k in range(iterations):
         # Forward-pass
         result = [n(x) for x in inputs]
@@ -222,3 +218,13 @@ def test(inputs: list = None, expected: list = None, nout: int = 1, iterations: 
         if info: print(k, f"{loss.data:.3f}")
     return n
 
+def train(network, inputs: list, outputs: list, step: float = 0.1):
+    if type(inputs) != list: inputs = [inputs]
+    if type(outputs) != list: outputs = [outputs]
+    result = network(inputs)
+    c = cost(result, outputs)
+    network.zero_grad()
+    c.backward()
+    for p in network.parameters():
+        p.data -= step * p.grad
+    return result
