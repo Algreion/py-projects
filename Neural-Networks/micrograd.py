@@ -50,6 +50,8 @@ class Value:
         return self * other**(-1) # a/b = a * (1/b)
     def __rtruediv__(self, other):
         return self**(-1) * other
+    def __iter__(self):
+        return iter([self])
 
     def exp(self):
         x = self.data
@@ -65,6 +67,13 @@ class Value:
         out = Value(t, (self,), 'tanh')
         def _backward():
             self.grad += (1 - t**2) * out.grad # dx of tanh(x) = 1-tanh(x)^2
+        out._backward = _backward
+        return out
+    
+    def relu(self):
+        out = Value(0 if self.data < 0 else self.data, (self,), 'ReLU')
+        def _backward():
+            self.grad += (out.data > 0) * out.grad
         out._backward = _backward
         return out
     
@@ -101,12 +110,18 @@ class Value:
 
 #* Nudging all values in the direction of their gradient, we increase the final output
 
+class Commons:
+    def zero_grad(self):
+        for p in self.parameters():
+            p.grad = 0
 
-class Neuron:
+class Neuron(Commons):
     def __init__(self, nin: int):
-        """Single NN Neuron. nin = Number of expected inputs"""
+        """Single NN Neuron. 
+        nin = Number of expected inputs
+        """
         self.w = [Value(random.uniform(-1,1)) for _ in range(nin)] # Random weight for each input
-        self.b = Value(random.uniform(-1,1)) # Random bias for neuron
+        self.b = Value(random.uniform(-1,1)) # Starting bias for neuron | 0.01 if relu, random(-1,1) if tanh
     def __repr__(self):
         return f"Neuron(inputs={len(self.w)},weights=[{",".join(str(round(w.data,2)) for w in self.w)}],bias={self.b.data:.2f})"
     def __str__(self):
@@ -120,21 +135,22 @@ class Neuron:
     def parameters(self):
         """Returns all parameters from the neuron"""
         return self.w + [self.b]
+    def _size(self):
+        return len(self.parameters())
 
-class Layer:
-    def __init__(self, nin: int, nout: int):
+class Layer(Commons):
+    def __init__(self, nin: int, neurons: int):
         """Layer of NN Neurons.
         nin = Number of expected inputs.
-        nout = Number of neurons in the layer"""
-        self.neurons = [Neuron(nin) for _ in range(nout)]
+        neurons = Number of neurons in the layer"""
+        self.neurons = [Neuron(nin) for _ in range(neurons)]
     def __getitem__(self, index: int):
         return self.neurons[index]
     def __repr__(self):
         return f"Layer(inputs={len(self.neurons[0].w)},neurons={len(self.neurons)})"
     def __str__(self):
         return f"L({len(self.neurons)})"
-    def __iter__(self):
-        return iter(self.neurons)
+    
     def __call__(self, input):
         """Returns the activations for all neurons in the layer."""
         out = [n(input) for n in self.neurons]
@@ -142,15 +158,18 @@ class Layer:
     
     def parameters(self):
         return [p for n in self for p in n.parameters()]
+    def _size(self):
+        return len(self.parameters())
 
-class MLP:
-    def __init__(self, nin: int, nouts: list):
+class MLP(Commons):
+    def __init__(self, nin: int, layers: list):
         """Multi-layer Perceptron.
         nin is number of inputs.
-        nouts is list for number of neurons per layer"""
-        size = [nin] + nouts
-        self.layers = [Layer(size[i],size[i+1]) for i in range(len(nouts))]
-    def __call__(self, input):
+        layers is list for number of neurons per layer"""
+        size = [nin] + layers
+        self.layers = [Layer(size[i],size[i+1]) for i in range(len(layers))]
+    def __call__(self, input: list):
+        if isinstance(input,(float,int,Value)): input = [input]
         for layer in self.layers:
             input = layer(input) # Iteratively update the result for every layer
         return input # Result (for final layer, the output)
@@ -168,32 +187,38 @@ class MLP:
     def parameters(self):
         """Total weights and biases of the entire MLP"""
         return [p for l in self for p in l.parameters()]
+    def _size(self):
+        return len(self.parameters())
 
 def cost(output: list, expected: list):
     """Computes the cost for a particular result."""
     return sum((v_e-v_o)**2 for v_o,v_e in zip(output,expected))
 
-def test():
-    n = MLP(3,[4,4,1])
+def test(inputs: list = None, expected: list = None, nout: int = 1, iterations: int = 50, 
+         step: float = 0.05, hidden_layers: list = [4,4], info: bool = True):
     inputs = [
         [2.0,3.0,-1.0],
         [3.0,-1.0,0.5],
         [0.5,1.0,1.0],
         [1.0,1.0,-1.0]
-    ]
-    outputs = [1.0,-1.0,-1.0,1.0]
-    for k in range(20):
+    ] if inputs is None else inputs
+    outputs = [1.0,-1.0,-1.0,1.0] if expected is None else expected
+
+    n = MLP(len(inputs),hidden_layers+[nout]) # Network
+    print(n)
+    for k in range(iterations):
         # Forward-pass
-        pred = [n(x) for x in inputs]
-        # loss = sum((yo-ye)**2 for ye,yo in zip(outputs,pred))
-        loss = cost(outputs,pred)
+        result = [n(x) for x in inputs]
+        loss = cost(result, outputs)
 
         # Backward-pass
+        n.zero_grad()
         loss.backward()
 
-        #Update
+        # Update
         for p in n.parameters():
-            p.data -= 0.05 * p.grad
+            p.data -= step * p.grad
         
-        print(k, loss.data)
+        if info: print(k, f"{loss.data:.3f}")
     return n
+
