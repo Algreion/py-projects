@@ -190,7 +190,34 @@ class MLP(Module):
     def parameters(self):
         """Total weights and biases of the entire MLP"""
         return [p for l in self for p in l.parameters()]
+    def save(self, file: str):
+        """Save trained model on a file."""
+        with open(file, 'w') as f:
+            f.write(str(self).replace("\n","")+'\n')
+            for p in self.parameters():
+                f.write(str(p.data)+'\n')
+
+    def load(self, file: str):
+        """Load parameters onto a file. Must be of the same type as original."""
+        check = False
+        with open(file, 'r') as f:
+            first = f.readline().strip()
+            if first.startswith("["):
+                check = True
+                if first != str(self).replace("\n",""):
+                    print("MLP doesn't match given model.")
+                    return
+        with open(file,'r') as f:
+            if check: next(f)
+            for p in self.parameters():
+                p.data = float(f.readline())
+    def _reset(self):
+        """Resets all training, beware!"""
+        for p in self.parameters():
+            p.data = 0
+        self.zero_grad()
     def _size(self):
+        """Returns the parameter count of the NN."""
         return len(self.parameters())
 
 def cost(output: list, expected: list):
