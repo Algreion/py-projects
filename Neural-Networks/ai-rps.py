@@ -3,25 +3,30 @@ from micrograd import *
 import pygame
 pygame.font.init()
 
-ACTIVATION = 10
-LAYERS = [8, 8] # Hidden layers
+ACTIVATION = 5
+LAYERS = [8,8] # Hidden layers
+LOG = False
+CUSTOM = True
+CUSTOM_PARAMS = 'rps-model.txt' # With activation 5 and [8,8] layers!
 
 WIDTH, HEIGHT = 900,500
 BUTTON_FONTSIZE = 40
-BG_COLOR = (255,255,255)
+BG_COLOR = (240,240,240)
 FONT_COLOR = (0,0,0)
 BUTTON_FONT_COLOR = (255,255,255)
+WINNING_COLOR = (0,190,0)
+LOSING_COLOR = (190,0,0)
 BUTTON_BORDER_COLOR = (0,0,0)
 BUTTON_BORDER_SIZE = 3
 ROCK_COLOR = (120,120,120)
 PAPER_COLOR = (90,90,90)
 SCISSOR_COLOR = (60,60,60)
 
-BUTTONS_GAP = 15
+BUTTONS_GAP = 25
 BUTTONS_WIDTH = WIDTH//4
 BUTTONS_HEIGHT = HEIGHT//4
 BUTTONS_POSX = WIDTH//2 - 3*BUTTONS_WIDTH//2 - BUTTONS_GAP
-BUTTONS_POSY = HEIGHT-10
+BUTTONS_POSY = HEIGHT-20
 
 ROCK_BUTTON = (BUTTONS_POSX, BUTTONS_POSY - BUTTONS_HEIGHT, BUTTONS_WIDTH, BUTTONS_HEIGHT) # x, y, width, height
 PAPER_BUTTON = (BUTTONS_POSX + BUTTONS_GAP + BUTTONS_WIDTH, BUTTONS_POSY - BUTTONS_HEIGHT, BUTTONS_WIDTH, BUTTONS_HEIGHT)
@@ -43,6 +48,10 @@ MSGFONT = pygame.font.SysFont("Verdana", MSG_FONTSIZE)
 class Game:
     def __init__(self):
         self.ai = MLP(ACTIVATION + 3, LAYERS + [1])
+        if CUSTOM:
+            with open(CUSTOM_PARAMS,'r') as f:
+                for p in self.ai.parameters():
+                    p.data = float(f.readline())
         self.sp = 0 # Player score
         self.sai = 0 # AI Score
         self.pattern = deque()
@@ -53,6 +62,9 @@ class Game:
         self.total = 0 # Number of matches
         self.played = ""
         self.result = ""
+        self.resultcolor = FONT_COLOR
+        self.correct = 0
+        self.prediction = None
 
     def handle_click(self, pos: tuple):
         x, y = pos
@@ -64,29 +76,48 @@ class Game:
             self.handle_input(1)
 
     def handle_input(self, button: int):
-        self.total += 1
-        self.counts[button] += 1
         if self.total > ACTIVATION:
-            self.prob = [self.counts[-1]/self.total,self.counts[0]/self.total,self.counts[1]/self.total]
-            self.pattern.popleft()
-            self.pattern.append(button)
             inputs = list(self.pattern) + self.prob
             res = self.wintable[round(train(self.ai, inputs, button).data)]
+            self.pattern.popleft()
+            self.pattern.append(button)
+        elif self.total == ACTIVATION:
+            self.prob = [self.counts[-1]/self.total,self.counts[0]/self.total,self.counts[1]/self.total]
+            inputs = list(self.pattern) + self.prob
+            res = self.wintable[round(train(self.ai, inputs, button).data)]
+            self.pattern.popleft()
+            self.pattern.append(button)
         else:
             self.pattern.append(button)
             res = random.randint(-1,1)
+        self.total += 1
+        self.counts[button] += 1
+        self.prob = [self.counts[-1]/self.total,self.counts[0]/self.total,self.counts[1]/self.total]
         self.handle_result(button, res)
-    
+
     def handle_result(self, player: int, ai: int):
-        self.played = f"The AI played: {"Rock" if ai==-1 else "Paper" if ai==0 else "Scissors"}"
+        self.played = f"Player: {"Rock" if player==-1 else "Paper" if player==0 else "Scissors"} | AI: {"Rock" if ai==-1 else "Paper" if ai==0 else "Scissors"}"
         if self.rpstable[player] == ai:
             self.sp += 1
             self.result = "Won!"
+            self.resultcolor = WINNING_COLOR
         elif player == ai:
             self.result = "Tie!"
+            self.resultcolor = FONT_COLOR
         else:
             self.sai += 1
             self.result = "Lost!"
+            self.resultcolor = LOSING_COLOR
+        
+        if self.total > ACTIVATION:
+            if player == self.prediction: self.correct += 1
+            pygame.display.set_caption(f"Rock Paper Scissors | {self.total}. Accuracy: {str(round((self.correct/(self.total-ACTIVATION))*100,2))}%")
+            if LOG: print(f"{self.total-1}. Player played: {'Rock' if player==-1 else 'Paper' if player==0 else 'Scissors'}")
+        if self.total >= ACTIVATION:
+            inp = list(self.pattern)+self.prob
+            r = round(self.ai(inp).data)
+            self.prediction = r
+            if LOG: print(f"{self.total}. Prediction: {'Rock' if r==-1 else 'Paper' if r==0 else 'Scissors'}")
         self.draw()
 
     def draw(self):
@@ -110,16 +141,18 @@ class Game:
         win.blit(txt, (BUTTONS_POSX + BUTTONS_GAP*2 + (BUTTONS_WIDTH*5) // 2 - txt.get_size()[0]//2,
                        BUTTONS_POSY - BUTTONS_HEIGHT // 2 - txt.get_size()[1]//2))
         # Scores
-        txt = SCORESFONT.render(f"Player: {self.sp}", True, FONT_COLOR)
+        color = WINNING_COLOR if self.sai < self.sp else LOSING_COLOR if self.sai > self.sp else FONT_COLOR
+        txt = SCORESFONT.render(f"Player: {self.sp}", True, color)
         win.blit(txt, (PLAYER_SCORE_POSX - txt.get_size()[0], PLAYER_SCORE_POSY))
-        txt = SCORESFONT.render(f"AI: {self.sai}", True, FONT_COLOR)
+        color = WINNING_COLOR if self.sai > self.sp else LOSING_COLOR if self.sai < self.sp else FONT_COLOR
+        txt = SCORESFONT.render(f"AI: {self.sai}", True, color)
         win.blit(txt, (AI_SCORE_POSX - txt.get_size()[0], AI_SCORE_POSY))
 
         # Played
         txt = MSGFONT.render(self.played, True, FONT_COLOR)
         win.blit(txt, (MSG_POSX-txt.get_size()[0]//2, MSG_POSY - txt.get_size()[1]//2))
         # Result
-        txt = MSGFONT.render(self.result, True, FONT_COLOR)
+        txt = FONT.render(self.result, True, self.resultcolor)
         win.blit(txt, (MSG_POSX-txt.get_size()[0]//2, MSG_POSY - txt.get_size()[1]//2 + MSG_FONTSIZE*2))
         pygame.display.update()
 
