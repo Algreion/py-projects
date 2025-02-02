@@ -7,7 +7,7 @@ ACTIVATION = 5
 LAYERS = [8,8] # Hidden layers
 LOG = False
 CUSTOM = True
-CUSTOM_PARAMS = 'rps-model.txt' # With activation 5 and [8,8] layers!
+CUSTOM_PARAMS = 'rps-model.txt'
 
 WIDTH, HEIGHT = 900,500
 BUTTON_FONTSIZE = 40
@@ -49,9 +49,10 @@ class Game:
     def __init__(self):
         self.ai = MLP(ACTIVATION + 3, LAYERS + [1])
         if CUSTOM:
-            with open(CUSTOM_PARAMS,'r') as f:
-                for p in self.ai.parameters():
-                    p.data = float(f.readline())
+            try:
+                self.ai.load(CUSTOM_PARAMS)
+            except:
+                print("Failed to load custom model - defaulting.")
         self.sp = 0 # Player score
         self.sai = 0 # AI Score
         self.pattern = deque()
