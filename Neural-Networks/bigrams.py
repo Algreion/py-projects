@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 # Given 1 char, predict the next in the sequence. (a_ -> ab)
 # We include a boundary character '/' (usually <S> and <E>, but this works fine)
 
-#* The Bigram class is based on a NN, the BadBigram class is based on pure heuristics.
+#* The Bigram class is based on a NN, the HeuristicBigram class is based on pure heuristics.
 #* Note that a very large input data may be required (eg. 32k English words/names) for decent results.
 
 class Bigram:
@@ -39,7 +39,7 @@ class Bigram:
                 outputs.append(i2)
         return [torch.tensor(inputs), torch.tensor(outputs)]
     
-    def train(self, n: int = 1, info: bool = False, step: float = 30.0):
+    def train(self, n: int = 1, info: bool = False, step: float = 50.0):
         """Train the model n times based on data."""
         for i in range(n):
             inp, out = self.trainingset()
@@ -49,7 +49,7 @@ class Bigram:
             counts = logits.exp() # Softmax
             probs = counts / counts.sum(1, keepdim=True) # Normalized | Tensor of 27x27 probabilities (for the next character)
             p = probs[torch.arange(inp.nelement()), out] # Access the expected chars' probabilities
-            cost = -p.log().mean() # Actual cost for the model (NLL)
+            cost = -p.log().mean() # + 0.01*(self.weights**2).mean() |< Regularization, 'smooths' out the probabilities | Actual cost for the model (NLL)
 
             # Backward Pass
             self.weights.grad = None # Zero-grad
@@ -89,9 +89,9 @@ class Bigram:
 
 
 
-class BadBigram:
+class HeuristicBigram:
     def __init__(self, file: str):
-        """Model to predict next character given some training data. Inherently bad due to its purely probabilistic approach (without parameters)."""
+        """Model to predict next character given some training data. Inherently limited due to its purely heuristic approach (without parameters)."""
         try:
             with open(file,'r',encoding='utf-8') as f:
                 self.data = f.read().splitlines()
