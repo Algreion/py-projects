@@ -10,6 +10,85 @@ from matplotlib import pyplot as plt
 #* The Bigram class is based on a NN, the BadBigram class is based on pure heuristics.
 #* Note that a very large input data may be required (eg. 32k English words/names) for decent results.
 
+class Bigram:
+    def __init__(self, file: str):
+        """Trainable Neural Network model that predicts the next character based on given data. Fundamentally the same as micrograd's approach, using pytorch."""
+        try:
+            with open(file,'r',encoding='utf-8') as f:
+                self.data = f.read().splitlines()
+        except:
+            self.data = ''
+        self.chars = ['/']+list('abcdefghijklmnopqrstuvwxyz')
+        self.lookup = {s: i for i,s in enumerate(self.chars)}
+        self.reverselookup = {i: s for i,s in enumerate(self.chars)}
+
+        self.weights = torch.randn((27,27), requires_grad=True) # 27 neurons with 27 inputs
+    def __repr__(self):
+        sample = self.generate()
+        return f"Bigram_Model({sample=},parameters={self.weights.nelement()})"
+    
+    def trainingset(self, n: int = 0) -> list:
+        """Returns a list containing the inputs and expected outputs from the data."""
+        if n == 0: n = len(self.data)
+        inputs, outputs = [], []
+        for w in self.data[:n]:
+            chars = ['/'] + list(w) + ['/']
+            for c1, c2 in zip(chars, chars[1:]):
+                i1, i2 = self.lookup[c1], self.lookup[c2]
+                inputs.append(i1)
+                outputs.append(i2)
+        return [torch.tensor(inputs), torch.tensor(outputs)]
+    
+    def train(self, n: int = 1, info: bool = False, step: float = 30.0):
+        """Train the model n times based on data."""
+        for i in range(n):
+            inp, out = self.trainingset()
+            # Forward pass
+            encoded = F.one_hot(inp, num_classes=27).float()
+            logits = encoded @ self.weights # Matrix multiplication w input & neurons
+            counts = logits.exp() # Softmax
+            probs = counts / counts.sum(1, keepdim=True) # Normalized | Tensor of 27x27 probabilities (for the next character)
+            p = probs[torch.arange(inp.nelement()), out] # Access the expected chars' probabilities
+            cost = -p.log().mean() # Actual cost for the model (NLL)
+
+            # Backward Pass
+            self.weights.grad = None # Zero-grad
+            cost.backward() # Calculates gradients for all weights
+
+            # Update
+            self.weights.data -= step*self.weights.grad
+            if info: print(f"{i}. {cost.item():.4f}")
+    
+    def activate(self, char: int) -> int:
+        """Predicts the next character in bigram. Returns the corresponding index."""
+        if type(char) == str: char = self.lookup[char]
+        encoded = F.one_hot(torch.tensor(char), num_classes=27).float()
+        logits = encoded @ self.weights
+        counts = logits.exp()
+        probs = counts / counts.sum()
+        return torch.multinomial(probs, num_samples=1, replacement=True).item()
+    
+    def generate(self) -> str:
+        """Generates and returns a string constructed from the data's training."""
+        output = ""
+        index = 0 # Begin the word (start token)
+        while True:
+            index = self.activate(index)
+            if index == 0: # End token
+                break
+            output += self.reverselookup[index]
+
+        return output
+    
+    def generateN(self, n: int = 10) -> list:
+        """Generates N strings."""
+        result = []
+        for _ in range(n):
+            result.append(self.generate())
+        return result
+
+
+
 class BadBigram:
     def __init__(self, file: str):
         """Model to predict next character given some training data. Inherently bad due to its purely probabilistic approach (without parameters)."""
@@ -114,79 +193,4 @@ class BadBigram:
             result.append(self.generate())
         return result
 
-class Bigram:
-    def __init__(self, file: str):
-        """Trainable Neural Network model that predicts the next character based on given data. Fundamentally the same as micrograd's approach, using pytorch."""
-        try:
-            with open(file,'r',encoding='utf-8') as f:
-                self.data = f.read().splitlines()
-        except:
-            self.data = ''
-        self.chars = ['/']+list('abcdefghijklmnopqrstuvwxyz')
-        self.lookup = {s: i for i,s in enumerate(self.chars)}
-        self.reverselookup = {i: s for i,s in enumerate(self.chars)}
-
-        self.weights = torch.randn((27,27), requires_grad=True) # 27 neurons with 27 inputs
-    def __repr__(self):
-        sample = self.generate()
-        return f"Bigram_Model({sample=},parameters={self.weights.nelement()})"
-    
-    def trainingset(self, n: int = 0) -> list:
-        """Returns a list containing the inputs and expected outputs from the data."""
-        if n == 0: n = len(self.data)
-        inputs, outputs = [], []
-        for w in self.data[:n]:
-            chars = ['/'] + list(w) + ['/']
-            for c1, c2 in zip(chars, chars[1:]):
-                i1, i2 = self.lookup[c1], self.lookup[c2]
-                inputs.append(i1)
-                outputs.append(i2)
-        return [torch.tensor(inputs), torch.tensor(outputs)]
-    
-    def train(self, n: int = 1, info: bool = False, step: float = 30.0):
-        """Train the model n times based on data."""
-        for i in range(n):
-            inp, out = self.trainingset()
-            # Forward pass
-            encoded = F.one_hot(inp, num_classes=27).float()
-            logits = encoded @ self.weights # Matrix multiplication w input & neurons
-            counts = logits.exp() # Softmax
-            probs = counts / counts.sum(1, keepdim=True) # Normalized | Tensor of 27x27 probabilities (for the next character)
-            p = probs[torch.arange(inp.nelement()), out] # Access the expected chars' probabilities
-            cost = -p.log().mean() # Actual cost for the model (NLL)
-
-            # Backward Pass
-            self.weights.grad = None # Zero-grad
-            cost.backward() # Calculates gradients for all weights
-
-            # Update
-            self.weights.data -= step*self.weights.grad
-            if info: print(f"{i}. {cost.item():.4f}")
-    
-    def activate(self, char: int) -> int:
-        """Predicts the next character in bigram. Returns the corresponding index."""
-        if type(char) == str: char = self.lookup[char]
-        encoded = F.one_hot(torch.tensor(char), num_classes=27).float()
-        logits = encoded @ self.weights
-        counts = logits.exp()
-        probs = counts / counts.sum()
-        return torch.multinomial(probs, num_samples=1, replacement=True).item()
-    
-    def generate(self) -> str:
-        """Generates and returns a bigram constructed from the data."""
-        output = ""
-        index = 0 # Begin the word (start token)
-        while True:
-            index = self.activate(index)
-            if index == 0: # End token
-                break
-            output += self.reverselookup[index]
-
-        return output
-    
-    def generateN(self, n: int = 10) -> list:
-        result = []
-        for _ in range(n):
-            result.append(self.generate())
-        return result
     
