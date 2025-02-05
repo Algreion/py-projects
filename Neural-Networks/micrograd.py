@@ -1,4 +1,4 @@
-from math import tanh,exp
+from math import tanh,exp,log,cos,tan,sin
 import random
 
 class Value:
@@ -10,7 +10,7 @@ class Value:
         self._prev = set(_children)
         self._op = _op
     def __repr__(self):
-        return f"Value(data={self.data})"
+        return f"Value(data={self.data},grad={self.grad})"
     def __str__(self):
         return str(self.data)
     def __add__(self, other):
@@ -29,6 +29,14 @@ class Value:
         return self + (-other)
     def __rsub__(self, other):
         return (-self) + other
+    def __abs__(self):
+        return self if self.data >= 0 else -self
+    def __le__(self, other):
+        if not isinstance(other,Value): other = Value(other)
+        return self.data <= other.data
+    def __lt__(self, other):
+        if not isinstance(other,Value): other = Value(other)
+        return self.data < other.data
     def __mul__(self, other):
         other = other if isinstance(other,Value) else Value(other)
         out = Value(self.data * other.data, (self, other), '*')
@@ -61,6 +69,14 @@ class Value:
         out._backward = _backward
         return out
     
+    def log(self):
+        x = self.data
+        out = Value(log(x), (self,), 'log')
+        def _backward():
+            self.grad += (1 / x) * out.grad # dx of ln(x) = 1/x
+        out._backward = _backward
+        return out
+    
     def tanh(self):
         x = self.data
         t = tanh(x)
@@ -70,10 +86,44 @@ class Value:
         out._backward = _backward
         return out
     
+    def cos(self):
+        x = self.data
+        out = Value(cos(x), (self,), 'cos')
+        def _backward():
+            self.grad += -sin(x) * out.grad
+        out._backward = _backward
+        return out
+    
+    def sin(self):
+        x = self.data
+        out = Value(sin(x), (self,), 'sin')
+        def _backward():
+            self.grad += cos(x) * out.grad
+        out._backward = _backward
+        return out
+    
+    def tan(self):
+        x = self.data
+        t = tan(x)
+        out = Value(t, (self,), 'tan')
+        def _backward():
+            self.grad += (1 + t**2)*out.grad
+        out._backward = _backward
+        return out
+
     def relu(self):
         out = Value(0 if self.data < 0 else self.data, (self,), 'ReLU')
         def _backward():
             self.grad += (out.data > 0) * out.grad
+        out._backward = _backward
+        return out
+    
+    def sigmoid(self):
+        x = self.data
+        s = 1 / (1 + exp(-x)) # sigmoid(x)
+        out = Value(s, (self,), 'sigmoid')
+        def _backward():
+            self.grad += s * (1-s) * out.grad
         out._backward = _backward
         return out
     
@@ -95,6 +145,7 @@ class Value:
         self.grad = 1.0 # Base case
         for node in reversed(topological_sort(self)):
             node._backward()
+
 
 #! Backpropagation
 # We have a final output L, and want to find how everything impacts it (derivatives)
@@ -158,7 +209,7 @@ class Layer(Module):
         """Returns the activations for all neurons in the layer."""
         out = [n(input) for n in self.neurons]
         return out[0] if len(out) == 1 else out
-    
+
     def parameters(self):
         return [p for n in self for p in n.parameters()]
     def _size(self):
@@ -172,10 +223,12 @@ class MLP(Module):
         size = [nin] + layers
         self.layers = [Layer(size[i],size[i+1]) for i in range(len(layers))]
     def __call__(self, input: list):
+        """Activates the entire network on a given input."""
         if isinstance(input,(float,int,Value)): input = [input]
         for layer in self.layers:
             input = layer(input) # Iteratively update the result for every layer
         return input # Result (for final layer, the output)
+    
     def __getitem__(self, index: int):
         return self.layers[index]
     def __repr__(self):
@@ -190,6 +243,7 @@ class MLP(Module):
     def parameters(self):
         """Total weights and biases of the entire MLP"""
         return [p for l in self for p in l.parameters()]
+    
     def save(self, file: str):
         """Save trained model on a file."""
         with open(file, 'w') as f:
@@ -211,10 +265,11 @@ class MLP(Module):
             if check: next(f)
             for p in self.parameters():
                 p.data = float(f.readline())
+
     def _reset(self):
         """Resets all training, beware!"""
         for p in self.parameters():
-            p.data = 0
+            p.data = random.uniform(-1,1)
         self.zero_grad()
     def _size(self):
         """Returns the parameter count of the NN."""
@@ -246,6 +301,7 @@ def test(inputs: list, outputs: list, nin: int, nout: int, iterations: int = 50,
     return n
 
 def train(network, inputs: list, outputs: list, step: float = 0.1):
+    """Single step of NN training"""
     if type(inputs) != list: inputs = [inputs]
     if type(outputs) != list: outputs = [outputs]
     result = network(inputs)
@@ -255,3 +311,11 @@ def train(network, inputs: list, outputs: list, step: float = 0.1):
     for p in network.parameters():
         p.data -= step * p.grad
     return result
+
+def one_hot(n: int, size: int = -1):
+    """Return list representation of integers (0-indexed)."""
+    if size == -1 or size < n+1:
+        size = n+1
+    out = [0] * size
+    out[n] = 1
+    return out
