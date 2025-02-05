@@ -8,7 +8,7 @@ from matplotlib import pyplot as plt
 # We include a boundary character '/' (usually <S> and <E>, but this works fine)
 
 #* The Bigram class is based on a NN, the HeuristicBigram class is based on pure heuristics.
-#* Note that a very large input data may be required (eg. 32k English words/names) for decent results.
+#* Note that a very large input data may be required (eg. 32k+ English words/names) for decent results.
 
 class Bigram:
     def __init__(self, file: str):
@@ -17,15 +17,18 @@ class Bigram:
             with open(file,'r',encoding='utf-8') as f:
                 self.data = f.read().splitlines()
         except:
-            self.data = ''
+            self.data = []
         self.chars = ['/']+list('abcdefghijklmnopqrstuvwxyz')
         self.lookup = {s: i for i,s in enumerate(self.chars)}
-        self.reverselookup = {i: s for i,s in enumerate(self.chars)}
+        self.rlookup = {i: s for i,s in enumerate(self.chars)}
 
         self.weights = torch.randn((27,27), requires_grad=True) # 27 neurons with 27 inputs
     def __repr__(self):
         sample = self.generate()
-        return f"Bigram_Model({sample=},parameters={self.weights.nelement()})"
+        parameters = self.weights.nelement()
+        return f"Bigram_Model({sample=},{parameters=})"
+    def __call__(self, char: str = ''):
+        return self.generate(char)
     
     def trainingset(self, n: int = 0) -> list:
         """Returns a list containing the inputs and expected outputs from the data."""
@@ -40,7 +43,7 @@ class Bigram:
         return [torch.tensor(inputs), torch.tensor(outputs)]
     
     def train(self, n: int = 1, info: bool = False, step: float = 50.0):
-        """Train the model n times based on data."""
+        """Train the model n times based on data. A high step(10-100) works well."""
         for i in range(n):
             inp, out = self.trainingset()
             # Forward pass
@@ -68,15 +71,15 @@ class Bigram:
         probs = counts / counts.sum()
         return torch.multinomial(probs, num_samples=1, replacement=True).item()
     
-    def generate(self) -> str:
+    def generate(self, char: str = '') -> str:
         """Generates and returns a string constructed from the data's training."""
-        output = ""
-        index = 0 # Begin the word (start token)
+        output = char
+        index = self.lookup[char[-1]] if char else 0 # Begin the word (start token)
         while True:
             index = self.activate(index)
             if index == 0: # End token
                 break
-            output += self.reverselookup[index]
+            output += self.rlookup[index]
 
         return output
     
@@ -96,16 +99,19 @@ class HeuristicBigram:
             with open(file,'r',encoding='utf-8') as f:
                 self.data = f.read().splitlines()
         except:
-            self.data = ''
+            self.data = []
         self.chars = ['/']+list('abcdefghijklmnopqrstuvwxyz')
         self.lookup = {s: i for i,s in enumerate(self.chars)}
-        self.reverselookup = {i: s for i,s in enumerate(self.chars)}
+        self.rlookup = {i: s for i,s in enumerate(self.chars)}
         self.bigram = self.process_bigram()
         self.prob_bigram = (self.bigram+1).float() # Probability distribution of bigram | Smoothed out to avoid prob of 0
         self.prob_bigram /= self.prob_bigram.sum(1, keepdim = True)  # Broadcasting!
     def __repr__(self):
         sample = self.generate()
-        return f"BadBigram({sample=})"
+        return f"HeuristicBigram({sample=})"
+    def __call__(self, char: str = ''):
+        return self.generate(char)
+    
     def _process_bigram(self, n: int = 0) -> dict:
         """Returns a dictionary version of the bigram."""
         b = dict()
@@ -145,7 +151,7 @@ class HeuristicBigram:
             plt.imshow(array, cmap = 'Blues')
             for i in range(27):
                 for j in range(27):
-                    char = self.reverselookup[i] + self.reverselookup[j]
+                    char = self.rlookup[i] + self.rlookup[j]
                     plt.text(j,i,char,ha="center",va="bottom",color="gray")
                     plt.text(j,i,array[i,j].item(),ha="center",va="top",color="gray")
             plt.axis('off')
@@ -172,18 +178,18 @@ class HeuristicBigram:
         # Equivalent to minimizing the average log likelihood
         #* log (a*b*c) = log(a) + log(b) + log(c)
 
-    def generate(self) -> str:
+    def generate(self, char: str = '') -> str:
         """Generates and returns a bigram constructed from the data."""
         # Simply chooses next character based on most likely (as probability)!
-        output = ""
-        index = 0 # Begin the word (start token)
+        output = char
+        index = self.lookup[char[-1]] if char else 0 # Begin the word (start token)
         while True:
             p = self.prob_bigram[index] # Get corresponding row
             index = torch.multinomial(p, num_samples=1, replacement=True).item() # Sample 1
 
             if index == 0: # End token
                 break
-            output += self.reverselookup[index]
+            output += self.rlookup[index]
 
         return output
     
