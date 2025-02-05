@@ -20,32 +20,39 @@ from matplotlib import pyplot as plt
 #   than to calculate precise one but take much more time.
 # Approach to training: Find good initial learning rate, train for a while, then decay
 
-class Test:
-    def __init__(self, file: str, blocks: int = 3, dims: int = 2, neurons: int = 100):
-        """MLP?"""
+class Ngram:
+    def __init__(self, file: str, context: int = 3, dims: int = 2, neurons: int = 100):
+        """Character n-gram: Neural Network to predict next character based on training data."""
         try:
             with open(file,'r',encoding='utf-8') as f:
                 self.data = f.read().splitlines()
         except:
             self.data = []
-        self.blocks = blocks
+        self.context = context
         self.dims = dims
         self.lookup = dict(enumerate(['.']+list('abcdefghijklmnopqrstuvwxyz')))
         self.rlookup = dict([(v,k) for k,v in self.lookup.items()])
-        self.W1 = torch.randn((self.dims*self.blocks, neurons), requires_grad=True) # First hidden layer
+        self.W1 = torch.randn((self.dims*self.context, neurons), requires_grad=True) # First hidden layer
         self.b1 = torch.randn(neurons, requires_grad=True) # Biases of ^
         self.W2 = torch.randn((neurons, 27), requires_grad=True)
         self.b2 = torch.randn((27), requires_grad=True)
         self.C = torch.randn((27, self.dims), requires_grad=True) # Random initial N-dimensional vectors for chars
         self.params = [self.W1,self.b1,self.W2,self.b2,self.C]
         self.datasets = []
+    def __repr__(self):
+        return f"Ngram(sample={self.generate()},context={self.context},size={self.size()})"
+    def __str__(self):
+        """Used to validate saved parameters."""
+        return f"NGRAM[{",".join(map(lambda x: str(x),[self.context,self.dims,self.size()]))}]"
+    def __call__(self, word: str = ''):
+        return self.generate(word)
     
     def trainingset(self, size: int = 0, data: list = []) -> list:
         """Builds the full training set with n-size character inputs and expected outputs."""
         if not data: data = self.data
         X, Y = [], []
         for w in data[:size if size>0 else len(self.data)]:
-            context = [0] * self.blocks
+            context = [0] * self.context
             for c in w+'.':
                 index = self.rlookup[c]
                 X.append(context)
@@ -71,18 +78,23 @@ class Test:
     def embedding(self, inputs: torch.tensor) -> torch.tensor:
         """Embed the inputs and return their logits."""
         embed = self.C[inputs]
-        activation = torch.tanh(embed.view(-1, self.dims*self.blocks) @ self.W1 + self.b1)
+        activation = torch.tanh(embed.view(-1, self.dims*self.context) @ self.W1 + self.b1)
         return activation @ self.W2 + self.b2
 
-    def train(self, n: int = 1, info: bool = False, batch: int = 32, step: float = 0.1, full: bool = False) -> None:
-        """Performs n training steps with mini-batches."""
-        if full: X, Y = self.trainingset()
+    def train(self, n: int = 1, info: bool = False, batches: int = 32, step: float = 0.1, trainset: bool = True) -> None:
+        """Performs n training steps with mini-batches.
+        info: Show steps and loss.
+        batches: How many training examples are given at a time.
+        step: Gradient descent. 0.1 early on -> 0.01 near the end of training.
+        trainset: By default only train on the training-set. If false, trains on the whole dataset."""
+        if not trainset: X, Y = self.trainingset()
         else:
             if not self.datasets: self.splitdataset()
             X, Y = self.datasets[0], self.datasets[1]
+        if batches > len(X) or batches == 0: batches = len(X)//10
         for _ in range(n):
             # Construct mini-batch
-            index = torch.randint(0, X.shape[0], (batch,))
+            index = torch.randint(0, X.shape[0], (batches,))
 
             # Forward pass
             logits = self.embedding(X[index])
@@ -106,19 +118,28 @@ class Test:
         logits = self.embedding(X)
         return F.cross_entropy(logits, Y)
     
-    def generate(self) -> str:
+    def generate(self, word: str = '', lenlimit: int = 100) -> str:
         """Generate one word based on the training data."""
-        out = ""
-        index = 0
+        out = [self.rlookup[c] for c in word]
+        if word: 
+            if self.context < len(word):
+                context = [self.rlookup[c] for c in word][-self.context:]
+            else:
+                context = [self.rlookup[c] for c in word] + [0] * (self.context-len(word))
+        else: context = [0] * self.context # '...'
         while True:
-            pass
-        return out
+            probs = F.softmax(self.embedding(torch.tensor(context)),dim=1)
+            index = torch.multinomial(probs, num_samples=1, replacement=True).item()
+            if index == 0 or len(out) >= lenlimit: break
+            context = context[1:] + [index] # Shift context window
+            out.append(index)
+        return ''.join(self.lookup[i] for i in out)
     
-    def generateN(self, n: int = 10) -> list:
+    def generateN(self, n: int = 10, word: str = '') -> list:
         """Generate n words based on training data."""
         out = []
         for _ in range(n):
-            out.append(self.generate())
+            out.append(self.generate(word))
         return out
     
     def size(self) -> int:
@@ -141,3 +162,30 @@ class Test:
         if not vectors: vectors = self.C
         U, S, _ = torch.svd(vectors)
         return U[:, :2] @ torch.diag(S[:2])
+    
+    def save(self, file: str, validation: bool = True):
+        """Save the model's parameters on given file."""
+        with open(file, 'w') as f:
+            if validation: f.write(str(self)+'\n')
+            for m in self.params:
+                for p in m.view(-1): 
+                    f.write(str(p.item())+'\n')
+
+    def load(self, file: str, validation: bool = True):
+        """Load parameters from a file. Must be of the same type as original."""
+        check = False
+        if validation:
+            with open(file, 'r') as f:
+                first = f.readline().strip()
+                if first.startswith("NGRAM["):
+                    check = True
+                    if first != str(self):
+                        print("Ngram doesn't match given model.")
+                        return
+        with open(file,'r') as f:
+            if check: next(f)
+            for m in self.params:
+                data = [float(f.readline()) for _ in range(m.numel())]
+                m.data.copy_(torch.tensor(data, dtype=m.dtype).view(m.shape))
+                m.grad = None
+
