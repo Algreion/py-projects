@@ -20,6 +20,7 @@ from matplotlib import pyplot as plt
 #   than to calculate precise one but take much more time.
 # Approach to training: Find good initial learning rate, train for a while, then decay
 
+
 class Ngram:
     def __init__(self, file: str, context: int = 3, dims: int = 2, neurons: int = 100):
         """Character n-gram: Neural Network to predict next character based on training data."""
@@ -75,9 +76,22 @@ class Ngram:
         Xtest,Ytest = self.trainingset(data=words[n2:])
         self.datasets.extend([Xtr, Ytr, Xdev, Ydev, Xtest, Ytest])
 
+    #* Main process:
+    # Get inputs (vectors of length 'context') and their expected outputs | ex: [1 2 0] -> [3] ("ab."->"abc")
+    #? a = n.trainingset(1)
+    # Lookup each character into self.C lookup table, which turns them into N-dimensional vectors | ex: 0 -> [2.14 -1.31]
+    # Then we have many context-sized tensors with n-dimensional vectors for chars inside.
+    #? b = n.C[a] | See the lists of n-dim vectors
+    # We view the embedding with dims*context columns. Each row has our actual inputs
+    #? b = b.view(-1, n.dims * n.context)
+    # Matrix multiplication with weights 1, then + 100-D bias vector 1. This returns the activation of all (100) neurons in the first hidden layer as a 100-D vector.
+    # tanh non-linear function on ^
+    # Matrix multiplication with weights 2, + 27-D bias vector 2, returning a 27-D vector, the logits
+    #? logits = n.embedding(a)
+
     def embedding(self, inputs: torch.tensor) -> torch.tensor:
         """Embed the inputs and return their logits."""
-        embed = self.C[inputs]
+        embed = self.C[inputs] # Chars' corresponding N-dimensional vectors
         activation = torch.tanh(embed.view(-1, self.dims*self.context) @ self.W1 + self.b1)
         return activation @ self.W2 + self.b2
 
@@ -125,7 +139,7 @@ class Ngram:
             if self.context < len(word):
                 context = [self.rlookup[c] for c in word][-self.context:]
             else:
-                context = [self.rlookup[c] for c in word] + [0] * (self.context-len(word))
+                context = [0] * (self.context-len(word)) + [self.rlookup[c] for c in word]
         else: context = [0] * self.context # '...'
         while True:
             probs = F.softmax(self.embedding(torch.tensor(context)),dim=1)
@@ -178,9 +192,12 @@ class Ngram:
             with open(file, 'r') as f:
                 first = f.readline().strip()
                 if first.startswith("NGRAM["):
+                    print(first)
                     check = True
                     if first != str(self):
-                        print("Ngram doesn't match given model.")
+                        context,dims,c = map(int,first.removeprefix('NGRAM[').removesuffix(']').split(','))
+                        neurons = int((c-27-dims*27)/(28+dims*context))
+                        print(f"N-gram doesn't match structure: {context=} | {dims=} | {neurons=}.")
                         return
         with open(file,'r') as f:
             if check: next(f)
