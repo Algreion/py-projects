@@ -3,50 +3,81 @@ import torch.nn.functional as F
 from random import shuffle
 from matplotlib import pyplot as plt
 
-# Main approach:
-# - Convert words into N-dimensional vectors, initialized randomly.
+#* Main process:
+    # Get inputs (vectors of length 'context') and their expected outputs | ex: [1 2 0] -> [3] ("ab."->"abc")
+    #? a = n.trainingset(1)
+    # Lookup each character into self.C lookup table, which turns them into N-dimensional vectors | ex: 0 -> [2.14 -1.31]
+    # Then we have many context-sized tensors with n-dimensional vectors for chars inside.
+    #? b = n.C[a] | See the lists of n-dim vectors
+    # We view the embedding with dims*context columns. Each row has our actual inputs
+    #? b = b.view(-1, n.dims * n.context)
+    # Matrix multiplication with weights 1, then + 100-D bias vector 1. This returns the activation of all (100) neurons in the first hidden layer as a 100-D vector.
+    # tanh non-linear function on ^
+    # Matrix multiplication with weights 2, + 27-D bias vector 2, returning a 27-D vector, the logits
+    #? logits = n.embedding(a)
 
 #* Glossary
-# Hyperparameter: Hidden layer with variable size which depends on how well they perform.
-# Examples / Labels: Inputs outputs | input/example: emm -> [5,13,13], label: a -> [1]
-# Embedding: 'cramming' data in lower-dimensional space, eg. 27 chars mapped to 2D vectors.
-# Underfitting: Neural Network is too small, losses for dev and test splits are mostly equal.
-# Overfitting: 'Overusing' a relatively small batch of data, loss -> 0. Model is just memorizing.
-#   Fix: Split up training data into:
-#       - Training split | 80%, actual training, optimizing parameters with gradient descent.
-#       - Dev/validation split | 10%, optimizing settings eg. hyperparameters to find best
-#       - Test split | 10%, Evaluate performance of model at the end (avoid overfitting)
-# Mini-batch: Better to have 'approximate' gradient and make more steps (efficient)
-#   than to calculate precise one but take much more time.
-# Approach to training: Find good initial learning rate, train for a while, then decay
-
+    # Hyperparameter: Hidden layer with variable size which depends on how well they perform.
+    # Examples / Labels: Inputs outputs | input/example: emm -> [5,13,13], label: a -> [1]
+    # Embedding: 'cramming' data in lower-dimensional space, eg. 27 chars mapped to 2D vectors.
+    # Underfitting: Neural Network is too small, losses for dev and test splits are mostly equal.
+    # Overfitting: 'Overusing' a relatively small batch of data, loss -> 0. Model is just memorizing.
+    #   Fix: Split up training data into:
+    #       - Training split | 80%, actual training, optimizing parameters with gradient descent.
+    #       - Dev/validation split | 10%, optimizing settings eg. hyperparameters to find best
+    #       - Test split | 10%, Evaluate performance of model at the end (avoid overfitting)
+    # Mini-batch: Better to have 'approximate' gradient and make more steps (efficient)
+    #   than to calculate precise one but take much more time.
+    # Approach to training: Find good initial learning rate, train for a while, then decay
 
 class Ngram:
-    def __init__(self, file: str, context: int = 3, dims: int = 2, neurons: int = 100):
+    def __init__(self, file: str = '', context: int = 3, dims: int = 2, neurons: int = 100, model: str = ''):
         """Character n-gram: Neural Network to predict next character based on training data."""
         try:
             with open(file,'r',encoding='utf-8') as f:
                 self.data = f.read().splitlines()
         except:
             self.data = []
+        if model:
+            try:
+                with open(model,'r') as f:
+                    context,dims,c = map(int,f.readline().strip().removeprefix('NGRAM[').removesuffix(']').split(','))
+                    neurons = int((c-27-dims*27)/(28+dims*context))
+            except:
+                print('Unable to initialize the model from the given file.')
         self.context = context
         self.dims = dims
         self.lookup = dict(enumerate(['.']+list('abcdefghijklmnopqrstuvwxyz')))
         self.rlookup = dict([(v,k) for k,v in self.lookup.items()])
-        self.W1 = torch.randn((self.dims*self.context, neurons), requires_grad=True) # First hidden layer
-        self.b1 = torch.randn(neurons, requires_grad=True) # Biases of ^
-        self.W2 = torch.randn((neurons, 27), requires_grad=True)
-        self.b2 = torch.randn((27), requires_grad=True)
-        self.C = torch.randn((27, self.dims), requires_grad=True) # Random initial N-dimensional vectors for chars
+        self.W1 = torch.randn((self.dims*self.context, neurons)) * 0.25 # First hidden layer
+        self.b1 = torch.randn(neurons) * 0.01 # Biases of ^
+        self.W2 = torch.randn((neurons, 27)) * 0.01 # Scaled down for an initial uniform distribution (low initial loss)
+        self.b2 = torch.zeros((27)).float()
+        self.C = torch.randn((27, self.dims)) # Random initial N-dimensional vectors for chars
         self.params = [self.W1,self.b1,self.W2,self.b2,self.C]
+        for p in self.params:
+            p.requires_grad = True
         self.datasets = []
+        self.load(model)
+
     def __repr__(self):
         return f"Ngram(sample={self.generate()},context={self.context},size={self.size()})"
     def __str__(self):
         """Used to validate saved parameters."""
         return f"NGRAM[{",".join(map(lambda x: str(x),[self.context,self.dims,self.size()]))}]"
-    def __call__(self, word: str = ''):
-        return self.generate(word)
+    def __call__(self, word: str = '', number: int = 0):
+        n = number
+        if type(word)==int: word, number = '', word
+        if type(n)==str: word = n
+        return self.generateN(number,word) if number > 0 else self.generate(word)
+    
+    def updatedata(self, file: str):
+        """Updates the current data with a new file. Beware of duplicates."""
+        try:
+            with open(file,'r') as f:
+                self.data.extend(f.read().splitlines())
+        finally: 
+            self.datasets = []
     
     def trainingset(self, size: int = 0, data: list = []) -> list:
         """Builds the full training set with n-size character inputs and expected outputs."""
@@ -76,26 +107,13 @@ class Ngram:
         Xtest,Ytest = self.trainingset(data=words[n2:])
         self.datasets.extend([Xtr, Ytr, Xdev, Ydev, Xtest, Ytest])
 
-    #* Main process:
-    # Get inputs (vectors of length 'context') and their expected outputs | ex: [1 2 0] -> [3] ("ab."->"abc")
-    #? a = n.trainingset(1)
-    # Lookup each character into self.C lookup table, which turns them into N-dimensional vectors | ex: 0 -> [2.14 -1.31]
-    # Then we have many context-sized tensors with n-dimensional vectors for chars inside.
-    #? b = n.C[a] | See the lists of n-dim vectors
-    # We view the embedding with dims*context columns. Each row has our actual inputs
-    #? b = b.view(-1, n.dims * n.context)
-    # Matrix multiplication with weights 1, then + 100-D bias vector 1. This returns the activation of all (100) neurons in the first hidden layer as a 100-D vector.
-    # tanh non-linear function on ^
-    # Matrix multiplication with weights 2, + 27-D bias vector 2, returning a 27-D vector, the logits
-    #? logits = n.embedding(a)
-
     def embedding(self, inputs: torch.tensor) -> torch.tensor:
         """Embed the inputs and return their logits."""
         embed = self.C[inputs] # Chars' corresponding N-dimensional vectors
         activation = torch.tanh(embed.view(-1, self.dims*self.context) @ self.W1 + self.b1)
         return activation @ self.W2 + self.b2
 
-    def train(self, n: int = 1, info: bool = False, batches: int = 32, step: float = 0.1, trainset: bool = True) -> None:
+    def train(self, n: int = 1, info: bool = False, batches: int = 32, step: float = 0.1, trainset: bool = True, plot: bool = False) -> None:
         """Performs n training steps with mini-batches.
         info: Show steps and loss.
         batches: How many training examples are given at a time.
@@ -105,7 +123,11 @@ class Ngram:
         else:
             if not self.datasets: self.splitdataset()
             X, Y = self.datasets[0], self.datasets[1]
+        if not len(X) or not len(Y):
+            print('No data to train with!')
+            return
         if batches > len(X) or batches == 0: batches = len(X)//10
+        if plot: trackloss = []
         for _ in range(n):
             # Construct mini-batch
             index = torch.randint(0, X.shape[0], (batches,))
@@ -121,21 +143,30 @@ class Ngram:
             # Update
             for p in self.params:
                 p.data -= step * p.grad
-            if info: print(f"{_}. {loss.item():.4f}")
+            if info:
+                if not _%1000 or _==n-1: print(f"{_}. {loss.item():.4f}")
+                if plot: trackloss.append(loss.item())
+        if info and plot: plt.plot(trackloss)
     
+    @torch.no_grad()
     def loss(self, dev: bool = True) -> torch.tensor:
-        """Returns the total loss over the entire dataset / dev dataset."""
+        """Returns the total loss over the entire dataset / dev dataset. Don't use for backpropagation."""
         if not dev: X, Y = self.trainingset()
         else:
             if not self.datasets: self.splitdataset()
             X, Y = self.datasets[2], self.datasets[3]
+        if not len(X) or not len(Y):
+            print('No data to compute loss with!')
+            return
         logits = self.embedding(X)
         return F.cross_entropy(logits, Y)
     
+    @torch.no_grad()
     def generate(self, word: str = '', lenlimit: int = 100) -> str:
         """Generate one word based on the training data."""
+        word = word.lower()
         out = [self.rlookup[c] for c in word]
-        if word: 
+        if word:
             if self.context < len(word):
                 context = [self.rlookup[c] for c in word][-self.context:]
             else:
@@ -192,13 +223,12 @@ class Ngram:
             with open(file, 'r') as f:
                 first = f.readline().strip()
                 if first.startswith("NGRAM["):
-                    print(first)
                     check = True
                     if first != str(self):
                         context,dims,c = map(int,first.removeprefix('NGRAM[').removesuffix(']').split(','))
                         neurons = int((c-27-dims*27)/(28+dims*context))
                         print(f"N-gram doesn't match structure: {context=} | {dims=} | {neurons=}.")
-                        return
+                        return [context,dims,neurons]
         with open(file,'r') as f:
             if check: next(f)
             for m in self.params:
