@@ -44,7 +44,7 @@ class Ngram:
                     context,dims,c = map(int,f.readline().strip().removeprefix('NGRAM[').removesuffix(']').split(','))
                     neurons = int((c-27-dims*27)/(28+dims*context))
             except:
-                print('Unable to initialize the model from the given file.')
+                pass
         self.context = context
         self.dims = dims
         self.lookup = dict(enumerate(['.']+list('abcdefghijklmnopqrstuvwxyz')))
@@ -58,7 +58,7 @@ class Ngram:
         for p in self.params:
             p.requires_grad = True
         self.datasets = []
-        self.load(model)
+        if model: self.load(model)
 
     def __repr__(self):
         return f"Ngram(sample={self.generate()},context={self.context},size={self.size()})"
@@ -76,8 +76,9 @@ class Ngram:
         try:
             with open(file,'r') as f:
                 self.data.extend(f.read().splitlines())
-        finally: 
-            self.datasets = []
+        except:
+            print('Unable to update data with given file.')
+        finally: self.datasets = []
     
     def trainingset(self, size: int = 0, data: list = []) -> list:
         """Builds the full training set with n-size character inputs and expected outputs."""
@@ -219,20 +220,22 @@ class Ngram:
     def load(self, file: str, validation: bool = True):
         """Load parameters from a file. Must be of the same type as original."""
         check = False
-        if validation:
-            with open(file, 'r') as f:
-                first = f.readline().strip()
-                if first.startswith("NGRAM["):
-                    check = True
-                    if first != str(self):
-                        context,dims,c = map(int,first.removeprefix('NGRAM[').removesuffix(']').split(','))
-                        neurons = int((c-27-dims*27)/(28+dims*context))
-                        print(f"N-gram doesn't match structure: {context=} | {dims=} | {neurons=}.")
-                        return [context,dims,neurons]
-        with open(file,'r') as f:
-            if check: next(f)
-            for m in self.params:
-                data = [float(f.readline()) for _ in range(m.numel())]
-                m.data.copy_(torch.tensor(data, dtype=m.dtype).view(m.shape))
-                m.grad = None
+        try:
+            if validation:
+                with open(file, 'r') as f:
+                    first = f.readline().strip()
+                    if first.startswith("NGRAM["):
+                        check = True
+                        if first != str(self):
+                            context,dims,c = map(int,first.removeprefix('NGRAM[').removesuffix(']').split(','))
+                            neurons = int((c-27-dims*27)/(28+dims*context))
+                            print(f"N-gram doesn't match structure: {context=} | {dims=} | {neurons=}.")
+            with open(file,'r') as f:
+                if check: next(f)
+                for m in self.params:
+                    data = [float(f.readline()) for _ in range(m.numel())]
+                    m.data.copy_(torch.tensor(data, dtype=m.dtype).view(m.shape))
+                    m.grad = None
+        except:
+            print("Unable to open the given model's file.")
 
