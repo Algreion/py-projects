@@ -17,8 +17,8 @@ SINGLE_HEAD_SIZE = HEAD_SIZE // HEAD_NUMBER # Usually multiple heads are smaller
 DEBUGGING = False
 
 class Data:
+    """Character-level transformer | Shared data infrastructure."""
     def __init__(self, file: str = '', context: int = BLOCK):
-        """Character-level transformer architecture."""
         try:
             with open(file,'r',encoding='utf-8') as f:
                 self.data = f.read()
@@ -48,11 +48,9 @@ class Data:
         labels = torch.stack([data[i+1:i+self.context+1] for i in index])
         inputs, labels = inputs.to(DEVICE), labels.to(DEVICE)
         return inputs,labels # tuple
-
-
 class BigramLM(Data, nn.Module):
+    """Basic Bigram character model, now with pytorch."""
     def __init__(self, file: str = ''):
-        """Basic Bigram character model, now with pytorch."""
         Data.__init__(self,file)
         nn.Module.__init__(self)
         self.embedding = nn.Embedding(self.vocab_size, self.vocab_size)
@@ -115,14 +113,13 @@ class BigramLM(Data, nn.Module):
         for _ in range(n):
             res.append(self.generate(word, maxlen))
         return res
-
 class Head(nn.Module):
-    def __init__(self, head_size: int = HEAD_SIZE, context: int = BLOCK):
-        """Single head of self-attention"""
+    """Single head of self-attention"""
+    def __init__(self, head_size: int = HEAD_SIZE, context: int = BLOCK, n_embed: int = EMBEDIMS):
         super().__init__()
-        self.key = nn.Linear(EMBEDIMS, head_size, bias=False) # Every char has info about itself
-        self.query = nn.Linear(EMBEDIMS, head_size, bias=False) # Every char wants to know specific things
-        self.value = nn.Linear(EMBEDIMS, head_size, bias=False) # True embedding that is refined by key-queries
+        self.key = nn.Linear(n_embed, head_size, bias=False) # Every char has info about itself
+        self.query = nn.Linear(n_embed, head_size, bias=False) # Every char wants to know specific things
+        self.value = nn.Linear(n_embed, head_size, bias=False) # True embedding that is refined by key-queries
         self.register_buffer('tril',torch.tril(torch.ones(context, context)))
         self.training = True # Only mask future tokens if training
 
@@ -146,24 +143,48 @@ class Head(nn.Module):
 
 class MultiHeadAttention(nn.Module):
     """Multiple heads of self-attention acting in parallel."""
-    def __init__(self, n_heads: int = HEAD_NUMBER, head_size: int = HEAD_SIZE):
+    def __init__(self, n_heads: int = HEAD_NUMBER, head_size: int = SINGLE_HEAD_SIZE, context: int = BLOCK, n_embed: int = EMBEDIMS):
         super().__init__()
-        self.heads = nn.ModuleList([Head(head_size) for _ in range(n_heads)])
+        self.heads = nn.ModuleList([Head(head_size, context, n_embed) for _ in range(n_heads)])
         self.training = True
     def forward(self, inp):
         for h in self.heads:
             h.training = self.training
         return torch.cat([h(inp) for h in self.heads],dim=-1)
 
+class FeedForward(nn.Module):
+    """Basic non-linear layer"""
+    def __init__(self, n_embed: int = EMBEDIMS):
+        super().__init__()
+        self.layer = nn.Sequential(
+            nn.Linear(n_embed, n_embed),
+            nn.ReLU()
+        )
+    def forward(self, inp):
+        return self.layer(inp)
+
+class Block(nn.Module):
+    """Transformer block | Communication -> Computation"""
+    def __init__(self, head_n: int = HEAD_NUMBER, head_size: int = SINGLE_HEAD_SIZE, context: int = BLOCK, n_embed = EMBEDIMS):
+        super().__init__()
+        self.sa = MultiHeadAttention(head_n, head_size, context, n_embed)
+        self.ffwd = FeedForward(n_embed)
+    
+    def forward(self, inp):
+        inp = self.sa(inp)
+        inp = self.ffwd(inp)
+        return inp
+
 class GPT(Data, nn.Module):
     def __init__(self, file: str = '', context: int = BLOCK):
         """GPT Transformer architecture."""
         Data.__init__(self,file, context)
         nn.Module.__init__(self)
-        self.embedding = nn.Embedding(self.vocab_size, EMBEDIMS) # Embedding lookup for each character
+        self.token_embedding = nn.Embedding(self.vocab_size, EMBEDIMS) # Embedding lookup for each character
         self.position_embedding = nn.Embedding(self.context, EMBEDIMS) # Embedding lookup for positions (from 0 to context)
         self.sa_heads = MultiHeadAttention(HEAD_NUMBER, SINGLE_HEAD_SIZE) # Multi-head attention (key-query-values)
         self.lm_head = nn.Linear(SINGLE_HEAD_SIZE*HEAD_NUMBER, self.vocab_size) # ^ Correct possibly skewed dimensions
+        self.feedfwd = FeedForward(EMBEDIMS) # Allows processing and non-linear thinking about previous information
         self.optimizer = torch.optim.AdamW(self.parameters(), lr=LEARNING) # Gradient descent but better
 
     def __repr__(self):
@@ -179,13 +200,15 @@ class GPT(Data, nn.Module):
         if DEBUGGING: print("input:",inputs)
         self.sa_heads.training = False
         T = inputs.numel()
-        token_embeddings = self.embedding(inputs) #  token into N-dimensional space.
+        token_embeddings = self.token_embedding(inputs) #  token into N-dimensional space.
         if DEBUGGING: print("Token embed:",token_embeddings.shape)
-        pos_embeddings = self.position_embedding(torch.arange(T,device=DEVICE)) # Embed also its position.
+        pos_embeddings = self.position_embedding(torch.arange(T, device=DEVICE)) # Embed also its position.
         if DEBUGGING: print("Position embed:",pos_embeddings.shape)
         activation = token_embeddings + pos_embeddings # Sum ^ and ^^ to get all info about individual token
         refined = self.sa_heads(activation) # Refine it with self-attention (context of other tokens)
-        if DEBUGGING: print("Refined:",refined,"\n")
+        if DEBUGGING: print("Refined 1:",refined,refined.shape)
+        refined = self.feedfwd(refined)
+        if DEBUGGING: print("Refined 2:",refined,refined.shape,"\n")
         return self.lm_head(refined)
     
     def forward(self, inputs, labels) -> tuple:
@@ -196,14 +219,16 @@ class GPT(Data, nn.Module):
         if DEBUGGING: print("\nlabels:",labels,labels.shape)
         B, T = inputs.shape
         if DEBUGGING: print("B, T:",B,T)
-        token_embeddings = self.embedding(inputs) # [Batch,Context,VocabSize] | Prediction of char given previous
+        token_embeddings = self.token_embedding(inputs) # [Batch,Context,VocabSize] | Prediction of char given previous
         if DEBUGGING: print("\nToken embedding:",token_embeddings.shape)
         pos_embeddings = self.position_embedding(torch.arange(T, device=DEVICE))
         if DEBUGGING: print("\nPosition embedding:",pos_embeddings.shape)
         activation = token_embeddings + pos_embeddings
         if DEBUGGING: print("\nActivation:",activation.shape)
         refined = self.sa_heads(activation)
-        if DEBUGGING: print("\nRefined:",refined[0],refined.shape)
+        if DEBUGGING: print("\nRefined 1:",refined[0],refined.shape)
+        refined = self.feedfwd(refined)
+        if DEBUGGING: print("Refined 2:",refined,refined.shape,"\n")
         logits = self.lm_head(refined)
         if DEBUGGING: print("\nLogits:",logits[0][0],logits.shape)
         B, T, C = logits.shape
