@@ -147,7 +147,10 @@ class Ngram:
             if info:
                 if not _%1000 or _==n-1: print(f"{_}. {loss.item():.4f}")
                 if plot: trackloss.append(loss.item())
-        if info and plot: plt.plot(trackloss)
+        if info and plot:
+            if len(trackloss) % 10: t = torch.tensor(trackloss)
+            else: t = torch.tensor(trackloss).view(-1, n//10).mean(1)
+            plt.plot(t)
     
     @torch.no_grad()
     def loss(self, dev: bool = True) -> torch.tensor:
