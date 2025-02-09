@@ -2,35 +2,25 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from matplotlib import pyplot as plt
+from tqdm import trange
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 # Hyperparameters
-BATCH = 64
-BLOCK = 100
+BLOCK = 64
 LEARNING = 3e-4
-EMBEDIMS = 100
+EMBEDIMS = 120
 HEAD_SIZE = EMBEDIMS
-HEAD_NUMBER = 5
+HEAD_NUMBER = 6
 SINGLE_HEAD_SIZE = HEAD_SIZE // HEAD_NUMBER # Usually multiple heads are smaller
 FFWD_HIDDEN = 4
-DROPOUT = 0.2
-N_LAYERS = 5
+DROPOUT = 0.05
+N_LAYERS = 6
 
 # Default stats
+BATCH = 64
 MAXTOKENS = 300
 TRAINING_STEPS = 5000
-# ---------
-#TODO | With loaded shspr.txt, turn debugging on and look at how it works under the hood
-# Also make a simpler version with 2D/3D vectors to visualize it after training
-# Remove all debugging checks, optimize it more to improve training time
-# Add a plot function to view char embeddings / key-query-value vectors in 2D
-# Scale up slightly more and improve current loss (1.6910)
-# Train on alice in wonderland/names.txt/other databases
-# Train for 30k+ iters with lower learning rate to get actually good model (scaled up)
-# Fix a buncha stuff and look at intuition behind a few things
-# Maybe experiment with hyperparameters or even structure itself
-
-DEBUGGING = False
+EPSILON = 1e-12
 
 class Data:
     """Character-level transformer | Shared data infrastructure."""
@@ -40,7 +30,7 @@ class Data:
                 self.data = f.read()
         except:
             self.data = ''
-        self.lookup = dict(enumerate(['']+sorted(list(set(self.data))))) # index -> char
+        self.lookup = dict(enumerate(sorted(list(set(self.data))))) # index -> char
         self.rlookup = dict((v,k) for k,v in self.lookup.items()) # char -> index
         self.vocab_size = len(self.lookup)
         self.encode = lambda s: [self.rlookup[c] for c in s]
@@ -96,11 +86,10 @@ class BigramLM(Data, nn.Module):
             loss = F.cross_entropy(logits, labels)
         return logits,loss
     
-    def train(self, n: int = TRAINING_STEPS, info: bool = False, batchsize: int = BATCH):
-        for i in range(n):
+    def train(self, n: int = TRAINING_STEPS, batchsize: int = BATCH):
+        for i in trange(n):
             X, Y = self.trainingset(batchsize)
             _, loss = self.forward(X,Y)
-            if info and (not i%1000 or i==n-1): print(f'{i}. {loss.item():.3f}')
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
@@ -139,29 +128,25 @@ class Head(nn.Module):
         self.key = nn.Linear(n_embed, head_size, bias=False) # Every char has info about itself
         self.query = nn.Linear(n_embed, head_size, bias=False) # Every char wants to know specific things
         self.value = nn.Linear(n_embed, head_size, bias=False) # True embedding that is refined by key-queries
-        self.register_buffer('tril',torch.tril(torch.ones(context, context)))
-        self.dropout = nn.Dropout(DROPOUT)
+        self.dropout_p = DROPOUT
         self.training = True # Only mask future tokens if training
+        # self.register_buffer('tril',torch.tril(torch.ones(context, context)))
+        # self.dropout = nn.Dropout(DROPOUT)
 
     def forward(self, inp):
-        B,T,C = inp.shape if self.training else (1, *inp.shape) # Batch size | Tokens/Context | Character vectors
-        if DEBUGGING: print("\ninput:",inp[0],B,T,C)
+        # B,T,C = inp.shape if self.training else (1, *inp.shape) # Batch size | Tokens/Context | Character vectors
         k = self.key(inp) # BxTxH | H = HeadSize
         q = self.query(inp) # BxTxH
-        if DEBUGGING: print("\nkey:",k[0],k.shape)
-        if DEBUGGING: print("\nquery:",q[0],q.shape)
-        # Attention scores (affinities) as dot products
-        weights = q @ k.transpose(-2,-1) * C**-0.5 # BxTxH @ BxHxT = BxTxT | Layer by layer, TxH @ HxT -> TxT | Dot product between all k-q, how relevant each char is to another
-        if DEBUGGING: print("\nWeights 1:",weights[0],weights.shape)
-        if self.training: weights = weights.masked_fill(self.tril[:T,:T] == 0, float('-inf')) # Cannot communicate with future tokens
-        weights = F.softmax(weights, dim = -1)
-        if DEBUGGING: print("\nSoftmaxed Weights:",weights[0],weights.shape)
-        weights = self.dropout(weights)
-        if DEBUGGING: print("\nDropout:",weights[0],weights.shape)
-        # Weighted aggregation of values (Values are true embedded tokens)
         v = self.value(inp)
-        if DEBUGGING: print("\nValue:",v[0],v.shape)
-        return weights @ v # BxTxT @ BxTxH = BxTxH
+        # Attention scores (affinities) as dot products
+            # weights = q @ k.transpose(-2,-1) * C**-0.5 # BxTxH @ BxHxT = BxTxT | Layer by layer, TxH @ HxT -> TxT | Dot product between all k-q, how relevant each char is to another
+            # if self.training: weights = weights.masked_fill(self.tril[:T,:T] == 0, float('-inf')) # Cannot communicate with future tokens
+            # weights = F.softmax(weights, dim = -1)
+            # weights = self.dropout(weights)
+            # Weighted aggregation of values (Values are true embedded tokens)
+            # return weights @ v # BxTxT @ BxTxH = BxTxH
+        # Same as ^, but more efficient:
+        return F.scaled_dot_product_attention(q, k, v, dropout_p = self.dropout_p if self.training else 0.0, is_causal = self.training)
 
 class MultiHeadAttention(nn.Module):
     """Multiple heads of self-attention acting in parallel."""
@@ -181,7 +166,7 @@ class FeedForward(nn.Module):
         super().__init__()
         self.layer = nn.Sequential(
             nn.Linear(n_embed, n_embed * FFWD_HIDDEN),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Linear(n_embed * FFWD_HIDDEN, n_embed),
             nn.Dropout(DROPOUT)
         )
@@ -194,13 +179,12 @@ class Block(nn.Module):
         super().__init__()
         self.sa = MultiHeadAttention(head_n, head_size, context, n_embed)
         self.ffwd = FeedForward(n_embed)
-        self.ln1 = nn.LayerNorm(n_embed)
-        self.ln2 = nn.LayerNorm(n_embed)
+        self.ln1 = nn.LayerNorm(n_embed,eps=EPSILON)
+        self.ln2 = nn.LayerNorm(n_embed,eps=EPSILON)
     
     def forward(self, inp):
         inp = inp + self.sa(self.ln1(inp))
-        inp = inp + self.ffwd(self.ln2(inp))
-        return inp
+        return inp + self.ffwd(self.ln2(inp))
 
 class GPT(Data, nn.Module):
     def __init__(self, file: str = '', model: str = '', context: int = BLOCK):
@@ -210,8 +194,8 @@ class GPT(Data, nn.Module):
         self.token_embedding = nn.Embedding(self.vocab_size, EMBEDIMS) # Embedding lookup for each character
         self.position_embedding = nn.Embedding(self.context, EMBEDIMS) # Embedding lookup for positions (from 0 to context)
         self.blocks = nn.Sequential(*[Block() for _ in range(N_LAYERS)])
-        self.lnf = nn.LayerNorm(SINGLE_HEAD_SIZE*HEAD_NUMBER) # Final layer norm
-        self.lm_head = nn.Linear(SINGLE_HEAD_SIZE*HEAD_NUMBER, self.vocab_size) # ^ Correct possibly skewed dimensions
+        self.lnf = nn.LayerNorm(EMBEDIMS,eps=EPSILON) # Final layer norm
+        self.lm_head = nn.Linear(EMBEDIMS, self.vocab_size) # ^ Correct possibly skewed dimensions
         self.optimizer = torch.optim.AdamW(self.parameters(), lr=LEARNING) # Gradient descent but better
         if model: self.load(model)
 
@@ -222,48 +206,29 @@ class GPT(Data, nn.Module):
         if type(word)==int: word, maxlen = '', word
         if type(n)==str: word = n
         return self.generateN(number, word, maxlen) if number > 0 else self.generate(word, maxlen)
-        
+
     def inference(self, inputs):
-        if DEBUGGING: print("\nStarting inference step")
-        if DEBUGGING: print("input:",inputs)
         T = inputs.numel()
         token_embeddings = self.token_embedding(inputs) #  token into N-dimensional space.
-        if DEBUGGING: print("Token embed:",token_embeddings.shape)
         pos_embeddings = self.position_embedding(torch.arange(T, device=DEVICE)) # Embed also its position.
-        if DEBUGGING: print("Position embed:",pos_embeddings.shape)
         activation = token_embeddings + pos_embeddings # Sum ^ and ^^ to get all info about individual token
         refined = self.blocks(activation) # Refine it with self-attention (context of other tokens)
-        if DEBUGGING: print("Refined:",refined,refined.shape)
         normalized = self.lnf(refined)
-        if DEBUGGING: print("\nNormalized:",normalized[0],normalized.shape)
         return self.lm_head(normalized)
     
     def forward(self, inputs, labels) -> tuple:
         """Returns the logits and loss of the model."""
-        if DEBUGGING: print("\nStarting forward step")
-        if DEBUGGING: print("inputs:",inputs,inputs.shape)
-        if DEBUGGING: print("\nlabels:",labels,labels.shape)
         B, T = inputs.shape
-        if DEBUGGING: print("B, T:",B,T)
         token_embeddings = self.token_embedding(inputs) # [Batch,Context,VocabSize] | Prediction of char given previous
-        if DEBUGGING: print("\nToken embedding:",token_embeddings.shape)
         pos_embeddings = self.position_embedding(torch.arange(T, device=DEVICE))
-        if DEBUGGING: print("\nPosition embedding:",pos_embeddings.shape)
         activation = token_embeddings + pos_embeddings
-        if DEBUGGING: print("\nActivation:",activation.shape)
         refined = self.blocks(activation)
-        if DEBUGGING: print("\nRefined:",refined[0],refined.shape)
         normalized = self.lnf(refined)
-        if DEBUGGING: print("\nNormalized:",normalized[0],normalized.shape)
         logits = self.lm_head(normalized)
-        if DEBUGGING: print("\nLogits:",logits[0][0],logits.shape)
         B, T, C = logits.shape
         logits = logits.view(B*T,C) # Every row is different example's logits.
-        if DEBUGGING: print("\nFlattened logits:",logits[0],logits.shape)
         labels = labels.view(-1) # Flatten labels
-        if DEBUGGING: print("\nFlattened labels:",labels,labels.shape)
         loss = F.cross_entropy(logits, labels)
-        if DEBUGGING: print("\nLoss:",loss)
         return logits, loss
     
     def train(self, n: int = TRAINING_STEPS, info: bool = False, batchsize: int = BATCH, plot: bool = False):
@@ -272,14 +237,15 @@ class GPT(Data, nn.Module):
             return
         self._changemode(True)
         if plot: trackloss = []
-        for i in range(n):
+        for i in trange(n):
             X, Y = self.trainingset(batchsize)
             _, loss = self.forward(X,Y)
-            if info and (not i%1000 or i==n-1): print(f'{i}. {loss.item():.3f}')
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-            if plot: trackloss.append(loss.item())
+            if info:
+                if i%1000==0 or i == n-1: print(f"{i}. {loss.item():.3f}")
+                if plot: trackloss.append(loss.item())
         if plot:
             if len(trackloss) % 10: t = torch.tensor(trackloss)
             else: t = torch.tensor(trackloss).view(-1, n//10).mean(1)
@@ -306,7 +272,6 @@ class GPT(Data, nn.Module):
             logits = self.inference(context[-self.context:]) # Feed last character
             probs = F.softmax(logits[-1], dim=-1)
             index = torch.multinomial(probs, 1)
-            if index == 0: break
             context = torch.cat((context,index), 0) # Add one to context (till maxlen)
         return self.decode(context.tolist())
     
@@ -327,7 +292,7 @@ class GPT(Data, nn.Module):
     def save(self, file: str, vocabfile: str = ''):
         """Save the model's parameters onto a file. It is reccomended to also save its vocab."""
         with open(file, 'w', encoding='utf-8') as f:
-            validation = f"[{BLOCK},{EMBEDIMS},{HEAD_SIZE},{HEAD_NUMBER},{SINGLE_HEAD_SIZE},{FFWD_HIDDEN},{DROPOUT},{N_LAYERS},{self.vocab_size}]\n"
+            validation = f"[{BLOCK},{EMBEDIMS},{HEAD_SIZE},{HEAD_NUMBER},{SINGLE_HEAD_SIZE},{FFWD_HIDDEN},{N_LAYERS},{self.vocab_size}]\n"
             f.write(validation)
             for m in self.parameters():
                 f.write("\n".join(map(lambda x: str(x), m.view(-1).tolist())))
@@ -344,27 +309,58 @@ class GPT(Data, nn.Module):
             else:
                 self.data = torch.cat((self.data, torch.tensor(self.encode(f.read()), dtype = torch.long)))
         self.splitdata()
-        
+
     @torch.no_grad()
     def load(self, file: str):
         """Load the model's parameters."""
         with open(file, 'r', encoding='utf-8') as f:
-            validation = f"[{BLOCK},{EMBEDIMS},{HEAD_SIZE},{HEAD_NUMBER},{SINGLE_HEAD_SIZE},{FFWD_HIDDEN},{DROPOUT},{N_LAYERS},{self.vocab_size}]"
+            validation = f"[{BLOCK},{EMBEDIMS},{HEAD_SIZE},{HEAD_NUMBER},{SINGLE_HEAD_SIZE},{FFWD_HIDDEN},{N_LAYERS},{self.vocab_size}]"
             first = f.readline().strip()
             if validation != first:
                 if not first.startswith('['):
                     print("Given file doesn't contain matching validation")
                     return
-                b,e,h1,h2,shs,ff,dr,nl,vs = map(float,first.removeprefix('[').removesuffix(']').split(','))
+                b,e,h1,h2,shs,ff,nl,vs = map(int,first.removeprefix('[').removesuffix(']').split(','))
                 print(f"""Given model doesn't match! Required:
                 context={b}, embedDims={e}, headSize={h1},headNum={h2},singleHeadSize={shs}
-                ffwdHidden={ff},dropout={dr},nLayers={nl},vocabSize={vs}""")
+                ffwdHidden={ff},nLayers={nl},vocabSize={vs}""")
                 return
             for m in self.parameters():
                 data = [float(f.readline()) for _ in range(m.numel())]
                 m.data.copy_(torch.tensor(data, dtype=m.dtype).view(m.shape))
                 m.grad = None
+    
+    @torch.no_grad()
+    def plot(self, vectors: str = None, basicflatten: bool = False):
+        """Shows the way the model maps the characters as vectors."""
+        check =  dict([(i,str(i)) for i in range(1000)])
+        if vectors is None:
+            C = self.token_embedding.weight
+            check = self.lookup
+        else: C = vectors
+        if len(C[0]) > 2:
+            if basicflatten:
+                C = C[:,:2]
+            else: C = self.flatten(C)
+        C = C.to('cpu')
+        plt.figure(figsize=(8,8))
+        plt.scatter(C[:,0].data, C[:,1].data, s = 200)
+        for i in range(C.shape[0]):
+            plt.text(C[i,0].item(), C[i,1].item(), check[i] ,ha="center",va="center",color="white")
+        plt.grid('minor')
+    
+    def flatten(self, vectors: torch.tensor) -> torch.tensor:
+        """Reduces N-dimensional vectors to 2D (with SVD)"""
+        U, S, _ = torch.svd(vectors)
+        return U[:, :2] @ torch.diag(S[:2])
+    
+    def size(self) -> int:
+        """Returns total parameter size of model."""
+        n = 0
+        for p in self.parameters():
+            n += p.numel()
+        return n
 
 if __name__=='__main__':
-    g = GPT('shakespeare.txt', 'shspr.txt')
+    g = GPT('shakespeare.txt','shspr.txt')
     g = g.to(DEVICE)
