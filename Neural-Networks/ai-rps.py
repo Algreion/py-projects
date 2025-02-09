@@ -6,8 +6,8 @@ pygame.font.init()
 ACTIVATION = 5
 LAYERS = [8,8] # Hidden layers
 LOG = False
-CUSTOM = True
-CUSTOM_PARAMS = 'rps-model.txt'
+PRETRAINED = False
+CUSTOM_PARAMS = './models/rps-model.txt'
 
 WIDTH, HEIGHT = 900,500
 BUTTON_FONTSIZE = 40
@@ -48,7 +48,7 @@ MSGFONT = pygame.font.SysFont("Verdana", MSG_FONTSIZE)
 class Game:
     def __init__(self):
         self.ai = MLP(ACTIVATION + 3, LAYERS + [1])
-        if CUSTOM:
+        if PRETRAINED:
             try:
                 self.ai.load(CUSTOM_PARAMS)
             except:
