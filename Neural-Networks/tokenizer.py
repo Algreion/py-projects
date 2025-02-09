@@ -4,7 +4,7 @@ class Tokenizer:
         self.chars = charsDict
         self.num = max(self.chars)+1 if self.chars else 256
         self.maxChars = maxChars
-        self.minNum = self.num
+        self.minNum = min(self.chars) if self.chars else 256
         self.k = dict()
         if charsFile:
             self.loadchars(charsFile)
@@ -28,7 +28,7 @@ class Tokenizer:
     def merge(self, tokens: list) -> list:
         counts = sorted(((v,k) for k,v in self.findpairs(tokens).items()))
         n = self.num
-        while counts and n <= self.maxChars and counts[-1][0] >= 2:
+        while counts and n < self.maxChars and counts[-1][0] >= 2:
             _, (c1,c2) = counts.pop()
             if (c1,c2) not in self.k:
                 self.chars[n] = (c1,c2)
@@ -63,7 +63,6 @@ class Tokenizer:
                         i += 1
                 tokens = new
         self.num = n
-        
         return tokens
     
     def unmerge(self, tokens: list) -> list:
@@ -81,7 +80,7 @@ class Tokenizer:
         return tokens
     def decode(self, tokens: list) -> str:
         """Decode a list of tokens."""
-        return bytes(tokens).decode('utf-8')
+        return bytes(tokens).decode('utf-8','replace')
 
     def savechars(self, file: str) -> None:
         """Save current chars dictionary into file."""
@@ -98,3 +97,26 @@ class Tokenizer:
                 chars[k] = (a,b)
         self.num = max(chars) + 1 if chars else 256
         self.chars = chars
+    
+    def ratio(self, word: str) -> list:
+        t = self(word)
+        l1,l2 = len(word), len(t)
+        if type(word)==str: print(f"Compressed to {l2/l1*100:.2f}% of original")
+        else: print(f"Uncompression ratio: {l2/l1:.2f}x")
+        return t
+    
+    def compress(self, file: str, output: str = ''):
+        with open(file,'rb') as f:
+            x = f.read()
+        x = self.merge(x)
+        if not output: output = file
+        with open(output, 'w', encoding='utf-8') as f:
+            f.write(''.join(map(chr,x)))
+    
+    def uncompress(self, file: str, output: str = ''):
+        with open(file,'r',encoding='utf-8') as f:
+            x = list(map(ord,f.read()))
+        x = self(x)
+        if not output: output = file
+        with open(output, 'w', encoding='utf-8') as f:
+            f.write(x.replace('\r',''))
