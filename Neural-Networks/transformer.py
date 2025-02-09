@@ -317,11 +317,12 @@ class GPT(Data, nn.Module):
             validation = f"[{BLOCK},{EMBEDIMS},{HEAD_SIZE},{HEAD_NUMBER},{SINGLE_HEAD_SIZE},{FFWD_HIDDEN},{N_LAYERS},{self.vocab_size}]"
             first = f.readline().strip()
             if validation != first:
-                if not first.startswith('['):
-                    print("Given file doesn't contain matching validation")
+                try:
+                    b,e,h1,h2,shs,ff,nl,vs = map(int,first.removeprefix('[').removesuffix(']').split(','))
+                except:
+                    print("Given file doesn't contain matching validation!")
                     return
-                b,e,h1,h2,shs,ff,nl,vs = map(int,first.removeprefix('[').removesuffix(']').split(','))
-                print(f"""Given model doesn't match! Required:
+                print(f"""Given model doesn't match! Required hyper-parameters:
                 context={b}, embedDims={e}, headSize={h1},headNum={h2},singleHeadSize={shs}
                 ffwdHidden={ff},nLayers={nl},vocabSize={vs}""")
                 return
@@ -362,5 +363,5 @@ class GPT(Data, nn.Module):
         return n
 
 if __name__=='__main__':
-    g = GPT('shakespeare.txt','shspr.txt')
+    g = GPT('./models/shakespeare.txt','./models/transformer-shspr.txt')
     g = g.to(DEVICE)
