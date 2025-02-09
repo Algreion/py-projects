@@ -4,15 +4,31 @@ from torch.nn import functional as F
 from matplotlib import pyplot as plt
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-TRAINING_STEPS = 10000
-BATCH = 32
-BLOCK = 8
-LEARNING = 1e-3
-EMBEDIMS = 32
-MAXTOKENS = 100
-HEAD_SIZE = 32
-HEAD_NUMBER = 4
+# Hyperparameters
+BATCH = 64
+BLOCK = 100
+LEARNING = 3e-4
+EMBEDIMS = 100
+HEAD_SIZE = EMBEDIMS
+HEAD_NUMBER = 5
 SINGLE_HEAD_SIZE = HEAD_SIZE // HEAD_NUMBER # Usually multiple heads are smaller
+FFWD_HIDDEN = 4
+DROPOUT = 0.2
+N_LAYERS = 5
+
+# Default stats
+MAXTOKENS = 300
+TRAINING_STEPS = 5000
+# ---------
+#TODO | With loaded shspr.txt, turn debugging on and look at how it works under the hood
+# Also make a simpler version with 2D/3D vectors to visualize it after training
+# Remove all debugging checks, optimize it more to improve training time
+# Add a plot function to view char embeddings / key-query-value vectors in 2D
+# Scale up slightly more and improve current loss (1.6910)
+# Train on alice in wonderland/names.txt/other databases
+# Train for 30k+ iters with lower learning rate to get actually good model (scaled up)
+# Fix a buncha stuff and look at intuition behind a few things
+# Maybe experiment with hyperparameters or even structure itself
 
 DEBUGGING = False
 
@@ -34,6 +50,7 @@ class Data:
         self.splitdata()
     def __repr__(self):
         return f"Data(vocabSize={self.vocab_size},trainingData={len(self.traindata)},devData={len(self.devdata)})"
+    
     def splitdata(self, n: float = 0.9):
         """Splits the data into training and development data."""
         n = int(len(self.data)*n)
@@ -48,6 +65,7 @@ class Data:
         labels = torch.stack([data[i+1:i+self.context+1] for i in index])
         inputs, labels = inputs.to(DEVICE), labels.to(DEVICE)
         return inputs,labels # tuple
+
 class BigramLM(Data, nn.Module):
     """Basic Bigram character model, now with pytorch."""
     def __init__(self, file: str = ''):
@@ -113,6 +131,7 @@ class BigramLM(Data, nn.Module):
         for _ in range(n):
             res.append(self.generate(word, maxlen))
         return res
+
 class Head(nn.Module):
     """Single head of self-attention"""
     def __init__(self, head_size: int = HEAD_SIZE, context: int = BLOCK, n_embed: int = EMBEDIMS):
@@ -121,6 +140,7 @@ class Head(nn.Module):
         self.query = nn.Linear(n_embed, head_size, bias=False) # Every char wants to know specific things
         self.value = nn.Linear(n_embed, head_size, bias=False) # True embedding that is refined by key-queries
         self.register_buffer('tril',torch.tril(torch.ones(context, context)))
+        self.dropout = nn.Dropout(DROPOUT)
         self.training = True # Only mask future tokens if training
 
     def forward(self, inp):
@@ -136,9 +156,11 @@ class Head(nn.Module):
         if self.training: weights = weights.masked_fill(self.tril[:T,:T] == 0, float('-inf')) # Cannot communicate with future tokens
         weights = F.softmax(weights, dim = -1)
         if DEBUGGING: print("\nSoftmaxed Weights:",weights[0],weights.shape)
+        weights = self.dropout(weights)
+        if DEBUGGING: print("\nDropout:",weights[0],weights.shape)
         # Weighted aggregation of values (Values are true embedded tokens)
         v = self.value(inp)
-        if DEBUGGING: print("Value:",v[0],v.shape)
+        if DEBUGGING: print("\nValue:",v[0],v.shape)
         return weights @ v # BxTxT @ BxTxH = BxTxH
 
 class MultiHeadAttention(nn.Module):
@@ -146,19 +168,22 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, n_heads: int = HEAD_NUMBER, head_size: int = SINGLE_HEAD_SIZE, context: int = BLOCK, n_embed: int = EMBEDIMS):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size, context, n_embed) for _ in range(n_heads)])
-        self.training = True
+        self.proj = nn.Linear(n_heads * head_size, n_embed) # Projection (residual connections)
+        self.dropout = nn.Dropout(DROPOUT)
     def forward(self, inp):
-        for h in self.heads:
-            h.training = self.training
-        return torch.cat([h(inp) for h in self.heads],dim=-1)
+        out = torch.cat([h(inp) for h in self.heads],dim=-1)
+        out = self.dropout(self.proj(out))
+        return out
 
 class FeedForward(nn.Module):
     """Basic non-linear layer"""
     def __init__(self, n_embed: int = EMBEDIMS):
         super().__init__()
         self.layer = nn.Sequential(
-            nn.Linear(n_embed, n_embed),
-            nn.ReLU()
+            nn.Linear(n_embed, n_embed * FFWD_HIDDEN),
+            nn.ReLU(),
+            nn.Linear(n_embed * FFWD_HIDDEN, n_embed),
+            nn.Dropout(DROPOUT)
         )
     def forward(self, inp):
         return self.layer(inp)
@@ -169,51 +194,52 @@ class Block(nn.Module):
         super().__init__()
         self.sa = MultiHeadAttention(head_n, head_size, context, n_embed)
         self.ffwd = FeedForward(n_embed)
+        self.ln1 = nn.LayerNorm(n_embed)
+        self.ln2 = nn.LayerNorm(n_embed)
     
     def forward(self, inp):
-        inp = self.sa(inp)
-        inp = self.ffwd(inp)
+        inp = inp + self.sa(self.ln1(inp))
+        inp = inp + self.ffwd(self.ln2(inp))
         return inp
 
 class GPT(Data, nn.Module):
-    def __init__(self, file: str = '', context: int = BLOCK):
-        """GPT Transformer architecture."""
-        Data.__init__(self,file, context)
+    def __init__(self, file: str = '', model: str = '', context: int = BLOCK):
+        """GPT Transformer architecture. To load model, you can use the vocab file for file."""
+        Data.__init__(self, file, context)
         nn.Module.__init__(self)
         self.token_embedding = nn.Embedding(self.vocab_size, EMBEDIMS) # Embedding lookup for each character
         self.position_embedding = nn.Embedding(self.context, EMBEDIMS) # Embedding lookup for positions (from 0 to context)
-        self.sa_heads = MultiHeadAttention(HEAD_NUMBER, SINGLE_HEAD_SIZE) # Multi-head attention (key-query-values)
+        self.blocks = nn.Sequential(*[Block() for _ in range(N_LAYERS)])
+        self.lnf = nn.LayerNorm(SINGLE_HEAD_SIZE*HEAD_NUMBER) # Final layer norm
         self.lm_head = nn.Linear(SINGLE_HEAD_SIZE*HEAD_NUMBER, self.vocab_size) # ^ Correct possibly skewed dimensions
-        self.feedfwd = FeedForward(EMBEDIMS) # Allows processing and non-linear thinking about previous information
         self.optimizer = torch.optim.AdamW(self.parameters(), lr=LEARNING) # Gradient descent but better
+        if model: self.load(model)
 
     def __repr__(self):
         return f'GPT(sample="{self(maxlen=10)}",vocabSize={self.vocab_size},context={self.context},data={len(self.data)})'
-    def __call__(self, word: str = '', number: int = 0, maxlen: int = MAXTOKENS):
-        n = number
-        if type(word)==int: word, number = '', word
+    def __call__(self, word: str = '', maxlen: int = MAXTOKENS, number: int = 0):
+        n = maxlen
+        if type(word)==int: word, maxlen = '', word
         if type(n)==str: word = n
         return self.generateN(number, word, maxlen) if number > 0 else self.generate(word, maxlen)
         
     def inference(self, inputs):
         if DEBUGGING: print("\nStarting inference step")
         if DEBUGGING: print("input:",inputs)
-        self.sa_heads.training = False
         T = inputs.numel()
         token_embeddings = self.token_embedding(inputs) #  token into N-dimensional space.
         if DEBUGGING: print("Token embed:",token_embeddings.shape)
         pos_embeddings = self.position_embedding(torch.arange(T, device=DEVICE)) # Embed also its position.
         if DEBUGGING: print("Position embed:",pos_embeddings.shape)
         activation = token_embeddings + pos_embeddings # Sum ^ and ^^ to get all info about individual token
-        refined = self.sa_heads(activation) # Refine it with self-attention (context of other tokens)
-        if DEBUGGING: print("Refined 1:",refined,refined.shape)
-        refined = self.feedfwd(refined)
-        if DEBUGGING: print("Refined 2:",refined,refined.shape,"\n")
-        return self.lm_head(refined)
+        refined = self.blocks(activation) # Refine it with self-attention (context of other tokens)
+        if DEBUGGING: print("Refined:",refined,refined.shape)
+        normalized = self.lnf(refined)
+        if DEBUGGING: print("\nNormalized:",normalized[0],normalized.shape)
+        return self.lm_head(normalized)
     
     def forward(self, inputs, labels) -> tuple:
         """Returns the logits and loss of the model."""
-        self.sa_heads.training = True
         if DEBUGGING: print("\nStarting forward step")
         if DEBUGGING: print("inputs:",inputs,inputs.shape)
         if DEBUGGING: print("\nlabels:",labels,labels.shape)
@@ -225,11 +251,11 @@ class GPT(Data, nn.Module):
         if DEBUGGING: print("\nPosition embedding:",pos_embeddings.shape)
         activation = token_embeddings + pos_embeddings
         if DEBUGGING: print("\nActivation:",activation.shape)
-        refined = self.sa_heads(activation)
-        if DEBUGGING: print("\nRefined 1:",refined[0],refined.shape)
-        refined = self.feedfwd(refined)
-        if DEBUGGING: print("Refined 2:",refined,refined.shape,"\n")
-        logits = self.lm_head(refined)
+        refined = self.blocks(activation)
+        if DEBUGGING: print("\nRefined:",refined[0],refined.shape)
+        normalized = self.lnf(refined)
+        if DEBUGGING: print("\nNormalized:",normalized[0],normalized.shape)
+        logits = self.lm_head(normalized)
         if DEBUGGING: print("\nLogits:",logits[0][0],logits.shape)
         B, T, C = logits.shape
         logits = logits.view(B*T,C) # Every row is different example's logits.
@@ -241,6 +267,10 @@ class GPT(Data, nn.Module):
         return logits, loss
     
     def train(self, n: int = TRAINING_STEPS, info: bool = False, batchsize: int = BATCH, plot: bool = False):
+        if len(self.traindata) <= batchsize:
+            print("No data to train with!")
+            return
+        self._changemode(True)
         if plot: trackloss = []
         for i in range(n):
             X, Y = self.trainingset(batchsize)
@@ -258,6 +288,10 @@ class GPT(Data, nn.Module):
     @torch.no_grad()
     def validate_loss(self, n: int = 1000):
         """Validate loss over the dev dataset."""
+        if len(self.devdata) <= 1000: 
+            print("Not enough dev-data to validate loss with!")
+            return
+        self._changemode(True)
         X, Y = self.trainingset(n, 'dev')
         _, loss = self.forward(X,Y)
         return loss
@@ -265,6 +299,7 @@ class GPT(Data, nn.Module):
     @torch.no_grad()
     def generate(self, word: str = '', maxlen: int = MAXTOKENS) -> str:
         """Generate one word based on training data."""
+        self._changemode(False)
         if not word: context = torch.zeros((1,), dtype=torch.long, device=DEVICE)
         else: context = torch.tensor(self.encode(word),device=DEVICE)
         for i in range(maxlen):
@@ -282,6 +317,54 @@ class GPT(Data, nn.Module):
             res.append(self.generate(word, maxlen))
         return res
 
+    def _changemode(self, mode: bool = True):
+        """Change mode for heads"""
+        for b in self.blocks:
+            for h in b.sa.heads:
+                h.training = mode
+
+    @torch.no_grad()
+    def save(self, file: str, vocabfile: str = ''):
+        """Save the model's parameters onto a file. It is reccomended to also save its vocab."""
+        with open(file, 'w', encoding='utf-8') as f:
+            validation = f"[{BLOCK},{EMBEDIMS},{HEAD_SIZE},{HEAD_NUMBER},{SINGLE_HEAD_SIZE},{FFWD_HIDDEN},{DROPOUT},{N_LAYERS},{self.vocab_size}]\n"
+            f.write(validation)
+            for m in self.parameters():
+                f.write("\n".join(map(lambda x: str(x), m.view(-1).tolist())))
+                f.write("\n")
+        if vocabfile:
+            with open(vocabfile,'w',encoding='utf-8') as f:
+                f.write("".join(c for c in self.rlookup))
+    
+    def _updatedata(self, file: str, clear: bool = True):
+        """By default, erases current data. Make sure the file has no unknown characters!"""
+        with open(file, 'r', encoding='utf-8') as f:
+            if clear:
+                self.data = torch.tensor(self.encode(f.read()), dtype = torch.long)
+            else:
+                self.data = torch.cat((self.data, torch.tensor(self.encode(f.read()), dtype = torch.long)))
+        self.splitdata()
+        
+    @torch.no_grad()
+    def load(self, file: str):
+        """Load the model's parameters."""
+        with open(file, 'r', encoding='utf-8') as f:
+            validation = f"[{BLOCK},{EMBEDIMS},{HEAD_SIZE},{HEAD_NUMBER},{SINGLE_HEAD_SIZE},{FFWD_HIDDEN},{DROPOUT},{N_LAYERS},{self.vocab_size}]"
+            first = f.readline().strip()
+            if validation != first:
+                if not first.startswith('['):
+                    print("Given file doesn't contain matching validation")
+                    return
+                b,e,h1,h2,shs,ff,dr,nl,vs = map(float,first.removeprefix('[').removesuffix(']').split(','))
+                print(f"""Given model doesn't match! Required:
+                context={b}, embedDims={e}, headSize={h1},headNum={h2},singleHeadSize={shs}
+                ffwdHidden={ff},dropout={dr},nLayers={nl},vocabSize={vs}""")
+                return
+            for m in self.parameters():
+                data = [float(f.readline()) for _ in range(m.numel())]
+                m.data.copy_(torch.tensor(data, dtype=m.dtype).view(m.shape))
+                m.grad = None
+
 if __name__=='__main__':
-    g = GPT('shakespeare.txt')
+    g = GPT('shakespeare.txt', 'shspr.txt')
     g = g.to(DEVICE)
