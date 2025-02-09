@@ -32,7 +32,7 @@ from matplotlib import pyplot as plt
 
 class Ngram:
     def __init__(self, file: str = '', context: int = 3, dims: int = 2, neurons: int = 100, model: str = ''):
-        """Character n-gram: Neural Network to predict next character based on training data."""
+        """Character n-gram: Neural Network to predict next character based on training data (1 word per line)."""
         try:
             with open(file,'r',encoding='utf-8') as f:
                 self.data = f.read().splitlines()
@@ -93,7 +93,7 @@ class Ngram:
                 context = context[1:] + [index]
         X = torch.tensor(X)
         Y = torch.tensor(Y)
-        return [X,Y]
+        return X,Y
     
     def splitdataset(self, override: bool = False) -> None:
         """Builds training set + dev set + test set. Stores them in self.datasets."""
@@ -212,6 +212,7 @@ class Ngram:
         U, S, _ = torch.svd(vectors)
         return U[:, :2] @ torch.diag(S[:2])
     
+    @torch.no_grad()
     def save(self, file: str, validation: bool = True):
         """Save the model's parameters on given file."""
         with open(file, 'w') as f:
@@ -220,6 +221,7 @@ class Ngram:
                 for p in m.view(-1): 
                     f.write(str(p.item())+'\n')
 
+    @torch.no_grad()
     def load(self, file: str, validation: bool = True):
         """Load parameters from a file. Must be of the same type as original."""
         check = False
@@ -242,3 +244,6 @@ class Ngram:
         except:
             print("Unable to open the given model's file.")
 
+# 3gram and 5gram models are trained on English names.
+if __name__ == '__main__':
+    n = Ngram(model='./models/5gram-model.txt')
