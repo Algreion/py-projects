@@ -1,10 +1,13 @@
 import random
 from rich.console import Console
+import os
 
 CHARS = """abcdefghijklmnopqrstuvwxyz"""
+WORDLEFILE = 'wordle.txt'
+HANGMANFILE = 'wenglish.txt'
 
 class Wordle:
-    def __init__(self, file: str = 'wordle.txt', minlen: int = 5, maxlen: int = 5, lives: int = 6, valid: bool = True, stats: bool = True):
+    def __init__(self, file: str = os.path.realpath(WORDLEFILE), minlen: int = 5, maxlen: int = 5, lives: int = 6, valid: bool = True, stats: bool = True):
         """Console based Wordle, possible words taken from file.
         If valid set to false, the guess may be any letter combination."""
         self.console = Console()
@@ -24,6 +27,7 @@ class Wordle:
     def play(self, word: str = ""):
         """Play the game itself. Input a word to use it and override length limitations."""
         self.tries = 0
+        flag = bool(word)
         word = word if word else random.choice(self.database) if self.database else 'world'
         self.console.print(f"[turquoise2]Welcome to Wordle![/turquoise2] You know the rules already, word has length {len(word)}.")
         correct = False
@@ -38,7 +42,7 @@ class Wordle:
                 cancel = True
                 break
             guess = guess.lower()
-            if not self.check_guess(word, guess):
+            if not self.check_guess(word, guess, flag):
                 print("Invalid guess!")
                 continue
             right = 0
@@ -76,8 +80,10 @@ class Wordle:
         avg = self.avg[2]/self.avg[0] if self.avg[0] else 0
         self.console.print(f"[chartreuse3]Correct: {self.avg[0]}[/chartreuse3]",f"[red3]Incorrect: {self.avg[1]}[/red3]",f"[deep_sky_blue1]Average attempts: {avg:.1f}[/deep_sky_blue1]",sep='\n')
     
-    def check_guess(self, word: str, guess: str) -> bool:
+    def check_guess(self, word: str, guess: str, flag: bool = False) -> bool:
         """Check whether guess is valid."""
+        if word == guess: return True
+        if flag: return len(guess) == len(word)
         v = all(c in CHARS for c in guess)
         if self.valid: v = v and guess in self.database
         return  len(guess) == len(word) and v
@@ -86,15 +92,16 @@ class Wordle:
         """Update database with file."""
         data = set()
         if getattr(self, 'database', False): data.update(self.database)
-        with open(file, 'r', encoding='utf-8') as f:
-            for line in f.readlines():
-                for word in line.split():
-                    if self.minlen <= len((word:=word.lower())) <= self.maxlen:
-                        if all(c in CHARS for c in word): data.add(word)
-        return list(data)
+        try:
+            with open(file, 'r', encoding='utf-8') as f:
+                for line in f.readlines():
+                    for word in line.strip().split():
+                        if self.minlen <= len((word:=word.lower())) <= self.maxlen:
+                            if all(c in CHARS for c in word): data.add(word)
+        finally: return list(data)
 
 class Hangman:
-    def __init__(self, file: str = 'wenglish.txt', lives: int = 6, stats: bool = True):
+    def __init__(self, file: str = os.path.realpath(HANGMANFILE), lives: int = 6, stats: bool = True):
         """Console-based hangman"""
         self.lives = lives
         self.tries = 0
@@ -161,11 +168,12 @@ class Hangman:
         """Update database with file."""
         data = set()
         if getattr(self, 'database', False): data.update(self.database)
-        with open(file, 'r', encoding='utf-8') as f:
-            for line in f.readlines():
-                word = line.strip()
-                if all(c in CHARS for c in word): data.add(word)
-        return list(data)
+        try:
+            with open(file, 'r', encoding='utf-8') as f:
+                for line in f.readlines():
+                    for word in line.strip().split():
+                        if all(c in CHARS for c in word): data.add(word)
+        finally: return list(data)
 
 def gameloop():
     wordle = None
@@ -190,16 +198,20 @@ def gameloop():
                 break
         gm = "Wordle" if playing == wordle else "Hangman"
         print(f'Currently playing {gm} | Options:')
-        print(f'1. Play {gm}',f'2. Customize {gm}',f'3. View {gm} stats.', '4. Return', '5. Quit', sep='\n')
+        print(f'1. Play {gm}',f'2. Customize {gm}',f'3. View {gm} stats.', '4. Custom Game', '5. Return', '6. Quit', sep='\n')
         inp = input('> ')
         match inp:
             case '1':
                 playing.play()
-            case '4':
+            case '5':
                 playing = 0
                 continue
             case '3':
                 playing.stats()
+            case '4':
+                word = input('Choose a word: ')
+                print('\n'*20)
+                playing.play(word)
             case '2':
                 print('1. Lives','2. MinLen', '3. MaxLen', '4. Valid Check', '5. Update Data',sep=' | ')
                 inp = input('> ')
@@ -207,7 +219,7 @@ def gameloop():
                     case '5':
                         file = input('Input a file name in the same folder: ')
                         try:
-                            playing.update(file)
+                            playing.database = playing.update(file)
                         except:
                             print('File not found')
                             continue
