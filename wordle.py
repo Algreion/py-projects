@@ -1,16 +1,9 @@
-import pygame, random
+import random
 from rich.console import Console
-pygame.font.init()
 
-
-WIDTH = 600
-HEIGHT = 800
 CHARS = """abcdefghijklmnopqrstuvwxyz"""
 
-BG = (255,255,255)
-CORRECT = ()
-
-class BasicWordle:
+class Wordle:
     def __init__(self, file: str = 'wordle.txt', minlen: int = 5, maxlen: int = 5, lives: int = 6, valid: bool = True, stats: bool = True):
         """Console based Wordle, possible words taken from file.
         If valid set to false, the guess may be any letter combination."""
@@ -32,18 +25,21 @@ class BasicWordle:
         """Play the game itself. Input a word to use it and override length limitations."""
         self.tries = 0
         word = word if word else random.choice(self.database) if self.database else 'world'
-        print(f"Welcome to Wordle! You know the rules already, word has length {len(word)}.")
+        self.console.print(f"[turquoise2]Welcome to Wordle![/turquoise2] You know the rules already, word has length {len(word)}.")
         correct = False
+        cancel = False
         while self.tries < self.lives:
             show = ["_" for _ in range(len(word))]
             self.console.print(" ".join(show))
             try:
                 guess = input('Guess: ')
             except: return
-            if not guess: break
+            if not guess:
+                cancel = True
+                break
             guess = guess.lower()
             if not self.check_guess(word, guess):
-                print("Invalid guess!\n")
+                print("Invalid guess!")
                 continue
             right = 0
             for i,c in enumerate(guess):
@@ -64,8 +60,8 @@ class BasicWordle:
                 correct = True
                 break
             print(f'Attempts: {self.tries}/{self.lives}')
-        if self.tries == 0:
-            print('Cancelled.')
+        if cancel:
+            print(f'Cancelled, the word was {word}.')
             return
         if not correct:
             self.console.print(f"You lost! The word was [bold red1]{word.upper()}[/bold red1]")
@@ -97,17 +93,73 @@ class BasicWordle:
                         if all(c in CHARS for c in word): data.add(word)
         return list(data)
 
-def mainloop():
-    win = pygame.display.set_mode((WIDTH, HEIGHT))
-    win.fill(BG)
-    pygame.display.update()
-    run = True
-    while run:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                run = False
+class Hangman:
+    def __init__(self, file: str = 'wenglish.txt', lives: int = 6, stats: bool = True):
+        """Console-based hangman"""
+        self.lives = lives
+        self.tries = 0
+        self.console = Console()
+        self.avg = [0,0,0] if stats else []
+        self.database = self.update(file)
+    
+    def play(self, word: str = ''):
+        word = word if word else random.choice(self.database) if self.database else 'jazz'
+        self.tries = 0
+        attempts = 0
+        self.console.print(f"[turquoise2]Welcome to Hangman![/turquoise2]\nGuess the word:")
+        correct = False
+        show = ["_" if c != ' ' else ' ' for c in word]
+        cancel = False
+        while self.tries < self.lives:
+            right = False
+            self.console.print(" ".join(show))
+            try:
+                guess = input('Guess: ')
+            except: return
+            if not guess:
+                cancel = True
                 break
-    print("Thanks for playing!")
+            attempts += 1
+            guess = guess.lower()
+            if len(guess) == 1:
+                for i,c in enumerate(word):
+                    if c == guess:
+                        show[i] = f'[bold green1]{c.upper()}[/bold green1]'
+                        right = True
+            if (len(guess) != 1 and guess == word) or all(x != '_' or x == ' ' for x in show):
+                for i in range(len(word)):
+                    show[i] = f'[bold green1]{word[i].upper()}[/bold green1]'
+                    right = True
+                self.console.print(' '.join(show))
+                self.console.print(f"Congratulations, the word was [bold green1]{word.upper()}[/bold green1]! You took {attempts} attempts!")
+                correct = True
+                break
+            if not right:
+                self.console.print(f'[red1]{guess.upper()}[/red1] is wrong!')
+                self.tries += 1
+            self.console.print(' '.join(show))
+            self.console.print(f'Lives: {self.tries}/{self.lives} | Attempts: {attempts}')
+        if cancel:
+            print(f'Cancelled, the word was {word}.')
+            return
+        if not correct:
+            self.console.print(f"You lost! The word was [bold red1]{word.upper()}[/bold red1]")
+        if self.avg:
+            self.avg[0] += correct
+            self.avg[1] += 1-correct
+            self.avg[2] += attempts if correct else 0
 
-# mainloop()
+    def stats(self):
+        if not self.avg: return None
+        avg = 0 if not self.avg[0] else self.avg[2]/self.avg[0]
+        self.console.print(f"[green1]Correct: {self.avg[0]}[/green1]", f"[red1]Incorrect: {self.avg[1]}[/red1]", f"[deep_sky_blue1]Average attempts: {avg:.1f}[/deep_sky_blue1]",sep='\n')
+
+    def update(self, file: str = "") -> list:
+        """Update database with file."""
+        data = set()
+        if getattr(self, 'database', False): data.update(self.database)
+        with open(file, 'r', encoding='utf-8') as f:
+            for line in f.readlines():
+                word = line.strip()
+                if all(c in CHARS for c in word): data.add(word)
+        return list(data)
