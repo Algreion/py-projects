@@ -1,6 +1,7 @@
 import random
 from rich.console import Console
 import os
+from trie import Trie
 
 CHARS = """abcdefghijklmnopqrstuvwxyz"""
 WORDLEFILE = os.path.join(os.path.dirname(__file__),'wordle.txt')
@@ -183,16 +184,182 @@ class Hangman:
                         if all(c in CHARS for c in word): data.add(word)
         finally: return list(data)
 
+class WordleSolver(Wordle):
+    def __init__(self, file: str = WORDLEFILE, heuristic: int = 2, samples: int = 30, rush: int = 20, minlen: int = 5, maxlen: int = 5, lives: int = 10, valid: bool = True, stats: bool = True):
+        """
+        Heuristic: How many words it starts with before attempting to guess
+        Samples: The amount of options it has at the start
+        Rush: How many blitz games it will compute
+        """
+        self.trie = Trie()
+        super().__init__(file,minlen,maxlen,lives,valid,stats)
+        self.heuristic = heuristic
+        self.samples = samples
+        self.rush = rush
+    
+    def blitz(self, n: int = 0):
+        """Blitz through many games at once"""
+        if not self.database:
+            print("No words to choose from!")
+            return
+        if not n: n = self.rush
+        for atmpt in range(n):
+            word = random.choice(self.database)
+            GUESSES = []
+            self.tries = 0
+            nums = dict([(v, 0) for v in CHARS])
+            for c in word: nums[c] = nums.get(c,0)+1
+            HEUR = self.heuristic
+            BANNED, CORRECT, POSITIONS, EXPLR = set(), {}, {}, ''
+            correct = False
+            while self.tries < self.lives:
+                found = {}
+                show = ["_" for _ in range(len(word))]
+                if HEUR > 0:
+                    OPTIONS = self.trie.uniqueword_common(len(word),''.join(EXPLR), self.samples)
+                    guess = random.choice(OPTIONS) if OPTIONS else ''
+                    HEUR -= 1
+                    if len(CHARS)-len(EXPLR)-len(guess) > 0: EXPLR += guess
+                    else: EXPLR = guess
+                else:
+                    guess = ['.' for _ in range(len(word))]
+                    for i in CORRECT:
+                        guess[i] = CORRECT[i]
+                    OPTIONS = self.trie.wordle(''.join(guess), ''.join(set(i for x in POSITIONS for i in POSITIONS[x])), ''.join(BANNED))
+                    OPTIONS = list(filter(lambda x: all(x[i] not in POSITIONS[i] for i in POSITIONS),OPTIONS))
+                    guess = random.choice(OPTIONS)
+                right = 0
+                for i,c in enumerate(guess):
+                    if c in word and word[i] == c:
+                        right += 1
+                        found[c] = found.get(c, 0) + 1
+                        col = f"[{self.correct}]" if self.correct else ''
+                        col2 = f"[/{self.correct}]" if self.correct else ''
+                        show[i] = f"{col}{c.upper()}{col2}"
+                        CORRECT[i] = c
+                    elif c not in word:
+                        BANNED.add(c)
+                    else:
+                        POSITIONS[i] = POSITIONS.get(i, []) + [c]
+                for i,c in enumerate(guess):
+                    if show[i] not in '_ ': continue
+                    if c in word and word[i] != c and (c not in found or found[c] < nums[c]):
+                        color = self.mostly
+                        found[c] = found.get(c,0)+1
+                    else: color = self.wrong
+                    col = f"[{color}]" if color else ''
+                    col2 = f"[/{color}]" if color else ''
+                    show[i] = f"{col}{c.upper()}{col2}"
+                self.tries += 1
+                GUESSES.append(''.join(show))
+                if right == len(word):
+                    correct = True
+                    break
+            self.console.print(f'{atmpt+1}. {word.upper()}: {' '.join(g for g in GUESSES)} | {f'[bold green1]CORRECT[/bold green1] | {self.tries} attempts' if correct else '[bold red1]INCORRECT[/bold red1]'}')
+            if self.avg:
+                self.avg[0] += correct
+                self.avg[1] += 1-correct
+                self.avg[2] += self.tries if correct else 0
+
+    def play(self, word: int = None):
+        """Watch the computer play the game."""
+        if not self.database:
+            print("No words to choose from!")
+            return
+        if type(word) == str and word in self.database:
+            word = self.database.index(word)
+        if type(word) != int or not (0<=word<len(self.database)):
+            word = random.randint(0,len(self.database)-1)
+        word = self.database[word]
+        self.tries = 0
+        self.console.print(f"\n[turquoise2]Welcome to Wordle![/turquoise2] You know the rules already, word has length {len(word)}.")
+        correct = False
+        nums = dict([(v, 0) for v in CHARS])
+        for c in word: nums[c] = nums.get(c,0)+1
+        HEUR = self.heuristic
+        BANNED, CORRECT, POSITIONS, EXPLR = set(), {}, {}, ''
+        while self.tries < self.lives:
+            found = {}
+            show = ["_" for _ in range(len(word))]
+            self.console.print(" ".join(show))
+            if HEUR > 0:
+                OPTIONS = self.trie.uniqueword_common(len(word),''.join(EXPLR), self.samples)
+                guess = random.choice(OPTIONS) if OPTIONS else ''
+                HEUR -= 1
+                if len(CHARS)-len(EXPLR)-len(guess) > 0: EXPLR += guess
+                else: EXPLR = guess
+            else:
+                guess = ['.' for _ in range(len(word))]
+                for i in CORRECT:
+                    guess[i] = CORRECT[i]
+                OPTIONS = self.trie.wordle(''.join(guess), ''.join(set(i for x in POSITIONS for i in POSITIONS[x])), ''.join(BANNED))
+                OPTIONS = list(filter(lambda x: all(x[i] not in POSITIONS[i] for i in POSITIONS),OPTIONS))
+                guess = random.choice(OPTIONS)
+            if not guess:
+                print("Something went wrong!")
+                return
+            print(f'> {guess}')
+            right = 0
+            for i,c in enumerate(guess):
+                if c in word and word[i] == c:
+                    right += 1
+                    found[c] = found.get(c, 0) + 1
+                    col = f"[{self.correct}]" if self.correct else ''
+                    col2 = f"[/{self.correct}]" if self.correct else ''
+                    show[i] = f"{col}{c.upper()}{col2}"
+                    CORRECT[i] = c
+                elif c not in word:
+                    BANNED.add(c)
+                else:
+                    POSITIONS[i] = POSITIONS.get(i, []) + [c]
+            for i,c in enumerate(guess):
+                if show[i] not in '_ ': continue
+                if c in word and word[i] != c and (c not in found or found[c] < nums[c]):
+                    color = self.mostly
+                    found[c] = found.get(c,0)+1
+                else: color = self.wrong
+                col = f"[{color}]" if color else ''
+                col2 = f"[/{color}]" if color else ''
+                show[i] = f"{col}{c.upper()}{col2}"
+            self.tries += 1
+            self.console.print(''.join(show))
+            if right == len(word):
+                self.console.print(f"Congratulations, the word was [bold green1]{word.upper()}[/bold green1]! You took {self.tries} attempts!")
+                correct = True
+                break
+            print(f'Attempts: {self.tries}/{self.lives}')
+        if not correct:
+            self.console.print(f"You lost! The word was [bold red1]{word.upper()}[/bold red1]")
+        if self.avg:
+            self.avg[0] += correct
+            self.avg[1] += 1-correct
+            self.avg[2] += self.tries if correct else 0
+
+        
+    def update(self, file: str = "") -> list:
+        """Update database and Trie with file."""
+        data = set()
+        if getattr(self, 'database', False): data.update(self.database)
+        if not getattr(self, 'trie', False): self.trie = Trie()
+        try:
+            with open(file, 'r', encoding='utf-8') as f:
+                for line in f.readlines():
+                    for word in line.strip().split():
+                        if self.minlen <= len((word:=word.lower())) <= self.maxlen:
+                            if all(c in CHARS for c in word): data.add(word)
+        finally: 
+            self.trie.insertmulti(list(data))
+            return list(data)
+
 def gameloop():
-    wordle = None
-    hangman = None
+    wordle, hangman, AI = None, None, None
     run = True
     playing = 0
     cancel = False
     while run:
         if not playing:
             Console().print('\n[dodger_blue2]Which word game do you want to play?[/dodger_blue2]')
-            print('1. Wordle','2. Hangman',sep='\n')
+            print('1. Wordle','2. Hangman', '3. Wordle AI',sep='\n')
             inp = input('> ')
             if inp == '1':
                 if not wordle: wordle = Wordle()
@@ -200,13 +367,17 @@ def gameloop():
             elif inp == '2':
                 if not hangman: hangman = Hangman()
                 playing = hangman
+            elif inp == '3':
+                if not AI: AI = WordleSolver()
+                playing = AI
             else:
                 cancel = True
                 run = False
                 break
-        gm = "Wordle" if playing == wordle else "Hangman"
-        Console().print(f'Currently playing [light_steel_blue]{gm}[/light_steel_blue]\nOptions:')
+        gm = "Wordle" if playing == wordle else 'Wordle AI' if playing == AI else "Hangman"
+        Console().print(f'\nCurrently playing [light_steel_blue]{gm}[/light_steel_blue]\nOptions:')
         print(f'1. Play {gm}',f'2. Customize {gm}',f'3. View {gm} stats.', '4. Custom Game', '5. Return', '6. Quit', sep='\n')
+        if AI == playing: print(f'7. AI Blitz ({playing.rush})')
         inp = input('\n> ')
         match inp:
             case '1':
@@ -219,9 +390,15 @@ def gameloop():
             case '4':
                 word = input('Choose a word: ')
                 print('\n'*100)
+                if playing == AI:
+                    try: word=int(word)
+                    except:
+                        print('The custom word must be indexed as a number from the database!')
+                        word = None
                 playing.play(word)
             case '2':
-                print(f'Customizing {gm}:','\n1. Lives','2. MinLen', '3. MaxLen', '4. Valid guess Checker', '5. Update Data',sep=' | ')
+                print(f'\nCustomizing {gm}:','\n1. Lives','2. MinLen', '3. MaxLen', '4. Valid guess Checker', '5. Update Data','6. Go back', sep=' | ')
+                if playing==AI: print('7. AI Heuristics | 8. AI Sample size | 9. AI Blitz')
                 inp = input('> ')
                 match inp:
                     case '5':
@@ -250,12 +427,38 @@ def gameloop():
                         except:
                             print('Invalid, defaulting to 5.')
                             playing.minlen = 5
-                    case _:
+                    case '1':
                         choice = input('Choose a new number of lives: ')
                         try: playing.lives = int(choice)
                         except:
                             print('Invalid, defaulting to 6.')
                             playing.lives = 6
+                    case '7':
+                        if not playing==AI: continue
+                        choice = input('Input a new heuristic (default=2): ')
+                        try: playing.heuristic = int(choice)
+                        except:
+                            print('Invalid, defaulting to 2.')
+                            playing.heuristic = 2
+                    case '8':
+                        if not playing==AI: continue
+                        choice = input('Input a new sample size (default=30): ')
+                        try: playing.samples = int(choice)
+                        except:
+                            print('Invalid, defaulting to 30.')
+                            playing.samples = 30
+                    case '9':
+                        if not playing==AI: continue
+                        choice = input('Input a new blitz amount: ')
+                        try: playing.rush = int(choice)
+                        except: 
+                            print('Invalid, defaulting to 20.')
+                            playing.rush = 20
+                    case _:
+                        continue
+            case '7':
+                playing.blitz()
+                playing.stats()
             case _:
                 cancel = True
                 run = False
