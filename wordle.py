@@ -19,7 +19,7 @@ class Wordle:
         self.wrong = 'bold grey78'
         self.avg = [0,0,0] if stats else []
     def __repr__(self):
-        st = '' if not self.avg else f', stats=[{self.avg[0]},{self.avg[1]},{self.avg[2]/self.avg[0] if self.avg[0] else 0}]'
+        st = '' if not self.avg else f', stats=[{self.avg[0]},{self.avg[1]},{self.avg[2]/self.avg[0] if self.avg[0] else 0:.3f}]'
         return f"Wordle(words={len(self.database)}{st})"
     def play(self, word: str = ""):
         """Play the game itself. Input a word to use it and override length limitations."""
@@ -101,6 +101,9 @@ class Hangman:
         self.console = Console()
         self.avg = [0,0,0] if stats else []
         self.database = self.update(file)
+    def __repr__(self):
+        st = '' if not self.avg else f', stats=[{self.avg[0]},{self.avg[1]},{self.avg[2]/self.avg[0] if self.avg[0] else 0:.3f}]'
+        return f"Hangman(words={len(self.database)}{st})"
     
     def play(self, word: str = ''):
         word = word if word else random.choice(self.database) if self.database else 'jazz'
@@ -163,3 +166,82 @@ class Hangman:
                 word = line.strip()
                 if all(c in CHARS for c in word): data.add(word)
         return list(data)
+
+def gameloop():
+    wordle = None
+    hangman = None
+    run = True
+    playing = 0
+    cancel = False
+    while run:
+        if not playing:
+            Console().print('[dodger_blue2]Which word game do you want to play?[/dodger_blue2]')
+            print('1. Wordle','2. Hangman',sep='\n')
+            inp = input('> ')
+            if inp == '1':
+                if not wordle: wordle = Wordle()
+                playing = wordle
+            elif inp == '2':
+                if not hangman: hangman = Hangman()
+                playing = hangman
+            else:
+                cancel = True
+                run = False
+                break
+        gm = "Wordle" if playing == wordle else "Hangman"
+        print(f'Currently playing {gm} | Options:')
+        print(f'1. Play {gm}',f'2. Customize {gm}',f'3. View {gm} stats.', '4. Return', '5. Quit', sep='\n')
+        inp = input('> ')
+        match inp:
+            case '1':
+                playing.play()
+            case '4':
+                playing = 0
+                continue
+            case '3':
+                playing.stats()
+            case '2':
+                print('1. Lives','2. MinLen', '3. MaxLen', '4. Valid Check', '5. Update Data',sep=' | ')
+                inp = input('> ')
+                match inp:
+                    case '5':
+                        file = input('Input a file name in the same folder: ')
+                        try:
+                            playing.update(file)
+                        except:
+                            print('File not found')
+                            continue
+                    case '4':
+                        choice = input('1 to turn on, 0 to turn off. If off, any string of characters is accepted.')
+                        if choice == '1':
+                            playing.valid = True
+                        else: playing.valid = False
+                    case '3':
+                        choice = input('Input a new maximum length: ')
+                        try: playing.maxlen = int(choice)
+                        except:
+                            print('Invalid, defaulting to 5.')
+                            playing.maxlen = 5
+                    case '2':
+                        choice = input('Input a new minimum length: ')
+                        try: playing.minlen = int(choice)
+                        except:
+                            print('Invalid, defaulting to 5.')
+                            playing.minlen = 5
+                    case _:
+                        choice = input('Choose a new number of lives: ')
+                        try: playing.lives = int(choice)
+                        except:
+                            print('Invalid, defaulting to 6.')
+                            playing.lives = 6
+            case _:
+                cancel = True
+                run = False
+                break
+
+    if cancel:
+        print('Quitting... Thanks for playing!')
+        return
+    
+if __name__ == '__main__':
+    gameloop()
