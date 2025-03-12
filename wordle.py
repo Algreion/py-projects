@@ -3,11 +3,11 @@ from rich.console import Console
 import os
 
 CHARS = """abcdefghijklmnopqrstuvwxyz"""
-WORDLEFILE = 'wordle.txt'
-HANGMANFILE = 'wenglish.txt'
+WORDLEFILE = os.path.join(os.path.dirname(__file__),'wordle.txt')
+HANGMANFILE = os.path.join(os.path.dirname(__file__),'wenglish.txt')
 
 class Wordle:
-    def __init__(self, file: str = os.path.realpath(WORDLEFILE), minlen: int = 5, maxlen: int = 5, lives: int = 6, valid: bool = True, stats: bool = True):
+    def __init__(self, file: str = WORDLEFILE, minlen: int = 5, maxlen: int = 5, lives: int = 6, valid: bool = True, stats: bool = True):
         """Console based Wordle, possible words taken from file.
         If valid set to false, the guess may be any letter combination."""
         self.console = Console()
@@ -18,7 +18,7 @@ class Wordle:
         self.valid = valid
         self.database = self.update(file)
         self.correct = "bold green4"
-        self.mostly = 'bold gold1'
+        self.mostly = 'bold orange1'
         self.wrong = 'bold grey78'
         self.avg = [0,0,0] if stats else []
     def __repr__(self):
@@ -28,15 +28,19 @@ class Wordle:
         """Play the game itself. Input a word to use it and override length limitations."""
         self.tries = 0
         flag = bool(word)
-        word = word if word else random.choice(self.database) if self.database else 'world'
-        self.console.print(f"[turquoise2]Welcome to Wordle![/turquoise2] You know the rules already, word has length {len(word)}.")
+        word = word.lower() if word else random.choice(self.database) if self.database else 'world'
+        self.console.print(f"\n[turquoise2]Welcome to Wordle![/turquoise2] You know the rules already, word has length {len(word)}.")
         correct = False
         cancel = False
+        nums = dict([(v, 0) for v in CHARS])
+        for c in word:
+            nums[c] = nums.get(c,0)+1
         while self.tries < self.lives:
+            found = {}
             show = ["_" for _ in range(len(word))]
             self.console.print(" ".join(show))
             try:
-                guess = input('Guess: ')
+                guess = input('\nGuess: ')
             except: return
             if not guess:
                 cancel = True
@@ -49,11 +53,16 @@ class Wordle:
             for i,c in enumerate(guess):
                 if c in word and word[i] == c:
                     right += 1
-                    color = self.correct
-                elif c in word:
+                    found[c] = found.get(c, 0) + 1
+                    col = f"[{self.correct}]" if self.correct else ''
+                    col2 = f"[/{self.correct}]" if self.correct else ''
+                    show[i] = f"{col}{c.upper()}{col2}"
+            for i,c in enumerate(guess):
+                if show[i] not in '_ ': continue
+                if c in word and word[i] != c and (c not in found or found[c] < nums[c]):
                     color = self.mostly
-                else:
-                    color = self.wrong
+                    found[c] = found.get(c,0)+1
+                else: color = self.wrong
                 col = f"[{color}]" if color else ''
                 col2 = f"[/{color}]" if color else ''
                 show[i] = f"{col}{c.upper()}{col2}"
@@ -65,7 +74,7 @@ class Wordle:
                 break
             print(f'Attempts: {self.tries}/{self.lives}')
         if cancel:
-            print(f'Cancelled, the word was {word}.')
+            print(f'Cancelled, the word was {word}.\n')
             return
         if not correct:
             self.console.print(f"You lost! The word was [bold red1]{word.upper()}[/bold red1]")
@@ -113,10 +122,10 @@ class Hangman:
         return f"Hangman(words={len(self.database)}{st})"
     
     def play(self, word: str = ''):
-        word = word if word else random.choice(self.database) if self.database else 'jazz'
+        word = word.lower() if word else random.choice(self.database) if self.database else 'jazz'
         self.tries = 0
         attempts = 0
-        self.console.print(f"[turquoise2]Welcome to Hangman![/turquoise2]\nGuess the word:")
+        self.console.print(f"\n[turquoise2]Welcome to Hangman![/turquoise2]\nGuess the word:")
         correct = False
         show = ["_" if c != ' ' else ' ' for c in word]
         cancel = False
@@ -145,12 +154,11 @@ class Hangman:
                 correct = True
                 break
             if not right:
-                self.console.print(f'[red1]{guess.upper()}[/red1] is wrong!')
+                self.console.print(f'[red1]{guess.upper()}[/red1] is wrong!\n')
                 self.tries += 1
-            self.console.print(' '.join(show))
-            self.console.print(f'Lives: {self.tries}/{self.lives} | Attempts: {attempts}')
+            self.console.print(f'Lives: {self.tries}/{self.lives} | Attempts: {attempts}\n')
         if cancel:
-            print(f'Cancelled, the word was {word}.')
+            print(f'Cancelled, the word was {word}.\n')
             return
         if not correct:
             self.console.print(f"You lost! The word was [bold red1]{word.upper()}[/bold red1]")
@@ -183,7 +191,7 @@ def gameloop():
     cancel = False
     while run:
         if not playing:
-            Console().print('[dodger_blue2]Which word game do you want to play?[/dodger_blue2]')
+            Console().print('\n[dodger_blue2]Which word game do you want to play?[/dodger_blue2]')
             print('1. Wordle','2. Hangman',sep='\n')
             inp = input('> ')
             if inp == '1':
@@ -197,9 +205,9 @@ def gameloop():
                 run = False
                 break
         gm = "Wordle" if playing == wordle else "Hangman"
-        print(f'Currently playing {gm} | Options:')
+        Console().print(f'Currently playing [light_steel_blue]{gm}[/light_steel_blue]\nOptions:')
         print(f'1. Play {gm}',f'2. Customize {gm}',f'3. View {gm} stats.', '4. Custom Game', '5. Return', '6. Quit', sep='\n')
-        inp = input('> ')
+        inp = input('\n> ')
         match inp:
             case '1':
                 playing.play()
@@ -210,21 +218,23 @@ def gameloop():
                 playing.stats()
             case '4':
                 word = input('Choose a word: ')
-                print('\n'*20)
+                print('\n'*100)
                 playing.play(word)
             case '2':
-                print('1. Lives','2. MinLen', '3. MaxLen', '4. Valid Check', '5. Update Data',sep=' | ')
+                print(f'Customizing {gm}:','\n1. Lives','2. MinLen', '3. MaxLen', '4. Valid guess Checker', '5. Update Data',sep=' | ')
                 inp = input('> ')
                 match inp:
                     case '5':
                         file = input('Input a file name in the same folder: ')
                         try:
+                            w = len(playing.database)
                             playing.database = playing.update(file)
+                            playing.console.print(f'Database updated successfully! Word count: {w} -> {len(playing.database)}\n')
                         except:
                             print('File not found')
                             continue
                     case '4':
-                        choice = input('1 to turn on, 0 to turn off. If off, any string of characters is accepted.')
+                        choice = input('1 to turn on, 0 to turn off: ')
                         if choice == '1':
                             playing.valid = True
                         else: playing.valid = False
@@ -252,7 +262,7 @@ def gameloop():
                 break
 
     if cancel:
-        print('Quitting... Thanks for playing!')
+        print('\nQuitting... Thanks for playing!')
         return
     
 if __name__ == '__main__':
