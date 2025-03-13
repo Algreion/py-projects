@@ -8,7 +8,7 @@ WORDLEFILE = os.path.join(os.path.dirname(__file__),'wordle.txt')
 HANGMANFILE = os.path.join(os.path.dirname(__file__),'wenglish.txt')
 
 class Wordle:
-    def __init__(self, file: str = WORDLEFILE, minlen: int = 5, maxlen: int = 5, lives: int = 6, valid: bool = True, stats: bool = True):
+    def __init__(self, file: str = WORDLEFILE, minlen: int = 5, maxlen: int = 5, lives: int = 7, valid: bool = True, stats: bool = True):
         """Console based Wordle, possible words taken from file.
         If valid set to false, the guess may be any letter combination."""
         self.console = Console()
@@ -185,7 +185,7 @@ class Hangman:
         finally: return list(data)
 
 class WordleSolver(Wordle):
-    def __init__(self, file: str = WORDLEFILE, heuristic: int = 2, samples: int = 30, rush: int = 20, minlen: int = 5, maxlen: int = 5, lives: int = 10, valid: bool = True, stats: bool = True):
+    def __init__(self, file: str = WORDLEFILE, heuristic: int = 2, samples: int = 30, rush: int = 20, minlen: int = 5, maxlen: int = 5, lives: int = 7, valid: bool = True, stats: bool = True):
         """
         Heuristic: How many words it starts with before attempting to guess
         Samples: The amount of options it has at the start
@@ -197,14 +197,17 @@ class WordleSolver(Wordle):
         self.samples = samples
         self.rush = rush
     
-    def blitz(self, n: int = 0):
+    def blitz(self, n: int = 0, word: str = ''):
         """Blitz through many games at once"""
         if not self.database:
             print("No words to choose from!")
             return
         if not n: n = self.rush
+        WORD = None
+        if word and word in self.database:
+            WORD = word
         for atmpt in range(n):
-            word = random.choice(self.database)
+            word = random.choice(self.database) if WORD is None else WORD
             GUESSES = []
             self.tries = 0
             nums = dict([(v, 0) for v in CHARS])
@@ -268,7 +271,9 @@ class WordleSolver(Wordle):
             return
         if type(word) == str and word in self.database:
             word = self.database.index(word)
-        if type(word) != int or not (0<=word<len(self.database)):
+        elif type(word)==str and word.isdigit():
+            word = int(word)
+        if word is None or not (0<=word<len(self.database)):
             word = random.randint(0,len(self.database)-1)
         word = self.database[word]
         self.tries = 0
@@ -389,12 +394,11 @@ def gameloop():
                 playing.stats()
             case '4':
                 word = input('Choose a word: ')
-                print('\n'*100)
                 if playing == AI:
-                    try: word=int(word)
-                    except:
-                        print('The custom word must be indexed as a number from the database!')
+                    if word not in playing.database and not word.isdigit():
+                        print('The word must be part of the database!')
                         word = None
+                else: print('\n'*100)
                 playing.play(word)
             case '2':
                 print(f'\nCustomizing {gm}:','\n1. Lives','2. MinLen', '3. MaxLen', '4. Valid guess Checker', '5. Update Data','6. Go back', sep=' | ')
@@ -467,6 +471,6 @@ def gameloop():
     if cancel:
         print('\nQuitting... Thanks for playing!')
         return
-    
+
 if __name__ == '__main__':
     gameloop()
