@@ -9,7 +9,7 @@ from random import choice
 # consideration the distance from the end as well, with a heuristic estimate (Euclidean/Manhattan distance).
 # The total cost thus is f = g + h, then it works the same as Dijkstra's algorithm with a priority queue
 
-custom = False
+custom = True
 TIMING = True
 DISTANCE = 1 # 0 Euclidean, 1 Manhattan distance
 
@@ -21,7 +21,7 @@ def get_custom_grid(filename: str = "maze.txt") -> list:
                 grid.append(list(filter(lambda x: x in "SE#.", line)))
         return grid
     except: return []
-if custom: CUSTOM_GRID = get_custom_grid()
+if custom: CUSTOM_GRID = get_custom_grid("maze.txt")
 else: CUSTOM_GRID = []
 
 def mainloop():
@@ -30,10 +30,11 @@ def mainloop():
     CUSTOM = bool(CUSTOM_GRID)
 
     ST, ED = (0,0), (-1,-1)
-    ROWS, COLS = 30, 30
+    ROWS, COLS = 20, 20
     MODE = 0
     modes = ["normal", "king", "horse", "diagonals", "jumper", "flash", "wallhugger","drunk","mirror", "wormhole"]
     border = False
+    STARTING = True
 
     class Node:
         def __init__(self, x, y):
@@ -51,11 +52,11 @@ def mainloop():
         def show(self, color, border):
             if not self.processed:
                 pygame.draw.rect(screen, color, (self.i * w, self.j * h, w, h), border)
-                pygame.display.update()
+                if not STARTING: pygame.display.update()
 
         def path(self, color, border):
             pygame.draw.rect(screen, color, (self.i * w, self.j * h, w, h), border)
-            pygame.display.update()
+            if not STARTING: pygame.display.update()
 
         def addNeighbors(self, grid):
             i = self.i
@@ -249,7 +250,10 @@ def mainloop():
             for c in range(COLS):
                 if CUSTOM_GRID[c][r] == "#": draw((r*w+1, c*h+1))
 
-    # Drawing time:
+    STARTING = False
+    pygame.display.update()
+    
+    # Drawing section:
     drawing = True
     neg = 1 # Negative weights
     modeselect = False
@@ -328,6 +332,7 @@ def mainloop():
                             continue
 
     toCheck.append((0, (start.i,start.j)))
+    toshow = set([start])
 
     # Add neighbors considering new obstacles
     for i in range(COLS):
@@ -381,8 +386,9 @@ def mainloop():
                         neighbor.h = heuristic(neighbor, end) if DISTANCE else euclidean(neighbor, end)
                         neighbor.f = neighbor.g + neighbor.h
                         neighbor.previous = current
-                        heapq.heappush(toCheck, (neighbor.f, (a, b)))
+                        heapq.heappush(toCheck,(neighbor.f,(a,b)))
                         if SHOW: neighbor.show(TOCHECK, 0)
+                        toshow.add(neighbor)
 
         if not toCheck:
             print("There is no path to the end node.")
