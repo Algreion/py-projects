@@ -11,7 +11,7 @@ BORDER = "gray80"
 ANTCOLOR = "red"
 BORDERSIZE = 1
 DIRECTIONS = [(0,1),(1,0),(0,-1),(-1,0)] # 0 = up, 1 = right, 2 = down, 3 = left
-ANTSIZE = min(W,H)//2 - 1
+ANTSIZE = max(1, min(W,H)//2 - 2 )
 
 STARTDIR = 0 # -1 for random start dir
 STARTPOS = (NX//2,NY//2) # (-1,y) for random start x pos
@@ -64,6 +64,25 @@ class Grid:
             for j in range(NY):
                 self.grid[i][j].draw()
         self.ant.draw()
+    
+    def tick(self):
+        x,y = self.ant.x, self.ant.y
+        cell = self.grid[x][y]
+        if cell.state == 1:
+            self.ant.direction += 1
+            if self.ant.direction >= len(DIRECTIONS): self.ant.direction = 0
+            cell.state = 0
+            cell.draw()
+        elif cell.state == 0:
+            self.ant.direction -= 1
+            if self.ant.direction < 0: self.ant.direction = len(DIRECTIONS)-1
+            cell.state = 1
+            cell.draw()
+        dx,dy = DIRECTIONS[self.ant.direction]
+        self.ant.x += dx
+        self.ant.y += dy
+        self.ant.draw()
+        self.ticks += 1
 
 class Ant:
     def __init__(self):
@@ -72,7 +91,7 @@ class Ant:
         self.y = STARTPOS[1] if STARTPOS[1] >= 0 else randint(0,NY-1)
 
     def draw(self):
-        pygame.draw.circle(WIN, ANTCOLOR, (STARTPOS[0]*W+W//2,STARTPOS[1]*H+H//2), ANTSIZE)
+        pygame.draw.circle(WIN, ANTCOLOR, (self.x*W+W//2,self.y*H+H//2), ANTSIZE)
         if not STARTING: pygame.display.update()
 
 def mainloop():
@@ -89,6 +108,17 @@ def mainloop():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 run = False
-                return
+                break
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                    run = False
+                    break
+                elif event.key == pygame.K_b:
+                    BORDERSIZE = int(not BORDERSIZE)
+                    game.draw()
+                elif event.key == pygame.K_t:
+                    game.tick()
+    print(f"Thanks for playing! Total ticks: {game.ticks}")
 
 mainloop()
