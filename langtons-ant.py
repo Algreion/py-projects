@@ -3,14 +3,14 @@ from random import randint
 
 # TODO | Add more states (colors), more ants, more directions (diagonals, still), etc.
 
-NX, NY = 50, 50
+NX, NY = 100, 100
+ANTS = 2
 REGSIZE = 800
 if REGSIZE % NX != 0: REGSIZE+=(NX-REGSIZE%NX)
 wh = (REGSIZE, REGSIZE)
 if NX != NY: wh = (REGSIZE, round(REGSIZE/NX*NY)) if NX>NY else (round(REGSIZE/NY*NX),REGSIZE)
 WIDTH, HEIGHT = wh
 W, H = WIDTH//NX, HEIGHT//NY
-print(WIDTH, HEIGHT)
 WIN = None
 STATE0 = "black"
 STATE1 = "white"
@@ -20,6 +20,7 @@ BORDERSIZE = 1
 DIRECTIONS = [(0,-1),(1,0),(0,1),(-1,0)] # 0 = up, 1 = right, 2 = down, 3 = left
 ANTSIZE = max(1, min(W,H)//2 - 1 )
 STARTING = True # Don't touch
+if NX>=100 or NY>=100: BORDERSIZE = 0
 
 STARTSTATE = 1 # State for all starting cells
 STARTDIR = 0 # -1 for random start dir
@@ -33,7 +34,7 @@ class Cell:
         self.state = STARTSTATE
         self.neighbors = {}
         self.pos = (self.x*W, self.y*H, W, H)
-    
+
     def draw(self, color: str = None) -> None:
         if color is None:
             if self.state == 1:
@@ -42,7 +43,7 @@ class Cell:
                 pygame.draw.rect(WIN, STATE0, self.pos)
         else:
             self.draw.rect(WIN, color, self.pos)
-        if BORDERSIZE: pygame.draw.rect(WIN, BORDER, self.pos, BORDERSIZE)
+        if BORDERSIZE > 0: pygame.draw.rect(WIN, BORDER, self.pos, BORDERSIZE)
         if not STARTING: pygame.display.update()
     
     def getneighbors(self, board) -> None:
