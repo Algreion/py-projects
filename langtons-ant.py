@@ -3,8 +3,7 @@ from random import randint
 
 # TODO | Add more states (colors), more ants, more directions (diagonals, still), etc.
 
-NX, NY = 100, 100
-ANTS = 2
+NX, NY = 50, 50
 REGSIZE = 800
 if REGSIZE % NX != 0: REGSIZE+=(NX-REGSIZE%NX)
 wh = (REGSIZE, REGSIZE)
@@ -16,6 +15,7 @@ STATE0 = "black"
 STATE1 = "white"
 BORDER = "gray80"
 ANTCOLOR = "red"
+REVERSANTCOLOR = "blue"
 BORDERSIZE = 1
 DIRECTIONS = [(0,-1),(1,0),(0,1),(-1,0)] # 0 = up, 1 = right, 2 = down, 3 = left
 ANTSIZE = max(1, min(W,H)//2 - 1 )
@@ -96,10 +96,7 @@ class Grid:
     
     def tick(self):
         x,y = self.ant.x, self.ant.y
-        try: cell = self.grid[x][y]
-        except:
-            print(x,y)
-            raise IndexError
+        cell = self.grid[x][y]
         if cell.state == 1:
             self.ant.direction = (self.ant.direction+1) % len(DIRECTIONS)
             cell.state = 0
@@ -112,6 +109,23 @@ class Grid:
         self.ant.x, self.ant.y = (x+dx) % NX, (y+dy) % NY
         self.ant.draw()
         self.ticks += 1
+    
+    def reversetick(self):
+        x,y = self.ant.x, self.ant.y
+        dx,dy = DIRECTIONS[self.ant.direction]
+        cell = self.grid[(x-dx)% NX][(y-dy) % NY]
+        if cell.state == 1:
+            self.ant.direction = (self.ant.direction+1) % len(DIRECTIONS)
+            cell.state = 0
+            cell.draw()
+        elif cell.state == 0:
+            self.ant.direction = (self.ant.direction-1) % len(DIRECTIONS)
+            cell.state = 1
+            cell.draw()
+        self.grid[self.ant.x][self.ant.y].draw()
+        self.ant.x, self.ant.y = (x-dx) % NX, (y-dy) % NY
+        self.ant.draw()
+        self.ticks -= 1
 
 class Ant:
     def __init__(self):
@@ -124,7 +138,7 @@ class Ant:
         if not STARTING: pygame.display.update()
 
 def mainloop():
-    global WIN, BORDERSIZE, STARTING
+    global WIN, BORDERSIZE, STARTING, ANTCOLOR
     run = True
     pygame.init()
     WIN = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -136,6 +150,8 @@ def mainloop():
     clock = pygame.time.Clock()
     paused = not STARTRUNNING
     spd = 4
+    reverse = False
+    a = ANTCOLOR
     SPDS = [1,2,3,5,10,20,30,45,60,0]
     if INTROS: print("Welcome to Langton's Ant! Press the spacebar to begin. (C for keybinds)")
     while run:
@@ -168,6 +184,10 @@ def mainloop():
                     game.reset()
                 elif event.key == pygame.K_q:
                     game.reset(True)
+                elif event.key == pygame.K_y:
+                    reverse = not reverse
+                    if reverse: ANTCOLOR = REVERSANTCOLOR
+                    else: ANTCOLOR = a
                 elif event.key == pygame.K_f:
                     for i in range(NX):
                         for j in range(NY):
@@ -186,8 +206,10 @@ def mainloop():
                 elif event.key == pygame.K_c:
                     print("""Keybinds:
     P/Space: Pause | K/L: Decrease/Increase speed | T: +1 step | I: Info
-    R: Reset | Q: Random reset | C: Keybinds | F: Invert states""")
-        if not paused and pygame.get_init(): game.tick()
+    R: Reset | Q: Random reset | C: Keybinds | F: Invert states | Y: Reverse time""")
+        if not paused and pygame.get_init():
+            if reverse and game.ticks > 0: game.reversetick()
+            elif not reverse: game.tick()
     if INTROS: print(f"\nThanks for playing! [{game.ticks} ticks]")
 
 mainloop()
