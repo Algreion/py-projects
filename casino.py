@@ -6,6 +6,11 @@ N2W = {1:"one",2:"two",3:"three",4:"four",5:"five",6:"six",7:"seven",8:"eight",9
 W2N = dict([(w,n) for n,w in N2W.items()])
 FACEDOWN = "purple"
 RICH = True
+SEP = "________________________________"
+BLACKJACK_HELP = """
+0 / H - Hit
+1 / S - Stand
+2 / D - Double down (x2 bet, take 1 card, stand)"""
 
 class Player:
     def __init__(self, name: str = "Player", money: float = 0, skill: int = 0, age: int = 18):
@@ -292,10 +297,7 @@ class Blackjack:
             if v == 21:
                 print("[green1]Natural blackjack![/green1]")
                 break
-            x = input("""\nOptions:
-0 / H - Hit
-1 / S - Stand
-2 / D - Double down (x2 bet, take 1 card, stand)""").lower()
+            x = input(f"[{player.name}] > ").lower()
             if x in ['0','h','hit']:
                 print("Drew:",self.deck.peek()[0])
                 self.draw(player)
@@ -314,22 +316,36 @@ class Blackjack:
                 print(self.playerhands[player])
                 if self.value(self.playerhands[player])>21: print("[red]Bust.[/bust]")
                 break
-            else:
-                print("Invalid input, try again.")
+            elif x=="quit":
+                quit()
+            elif x in ["help",'h','format']:
+                print(BLACKJACK_HELP)
                 continue
+            else:
+                print("Invalid input, type 'help' to see the options.")
+                continue
+        print(SEP)
     def round(self):
         "Loop of a full round."
-        print(f"Starting round #{self.rounds}!")
+        print(SEP)
+        print(f"\nStarting round #{self.rounds}!")
         # Betting
         for p in self.players:
-            x = input(f"\n{p.name}, you have {p.money}$.\nPlace your bet: ")
-            self.bets[p]=float(x)
+            col = "green1" if p.money>=0 else "red1"
+            print(f"\n{p.name}, you have [{col}]{p.money}$[/{col}].")
+            x = input("Place your bet: ")
+            try: self.bets[p]=float(x)
+            except:
+                print("Invalid bet! Defaulting to 100$.")
+                self.bets[p] = 100.0
         # Dealing
+        print(SEP)
         print("\nDealing cards...\n")
         self.deal()
         print("Dealer's hand:",self.dealerhand)
+        print(SEP)
         # Player turns
-        for p in self.players():
+        for p in self.players:
             self.player_turn(p)
         # Dealer's turn
         print("\nThe dealer is playing...")
@@ -340,12 +356,18 @@ class Blackjack:
         self.payout(info=True)
         self.rounds += 1
     def mainloop(self, players: Player | list | None = None):
-        print("Welcome to Blackjack!")
+        print("[bold]Welcome to Blackjack![/bold]")
         if players is None:
             players = Player(money=100)
         if isinstance(players,Player): players = [players]
-        print(f"Hello {', '.join([p.name for p in players])}! You have played {self.rounds-1} rounds. Want to play{" again" if self.rounds>1 else ''}?")
-        while input("(Y/N or 1/0) > ").lower() in ['y','1',"yes"]: self.round()
+        if self.rounds == 1:
+            print(SEP)
+            print(f"""Player options are as follows. Type 'help' to see them again:{BLACKJACK_HELP}""")
+            print(SEP)
+        print(f"\nHello {', '.join([p.name for p in players])}! You have played {self.rounds-1} rounds. Want to play {"again" if self.rounds>1 else '(Enter/X)'}?")
+        while input(f"Play {"again" if self.rounds>1 else '(Enter/X)'}?\n> ").lower() not in ['x','0',"no"]: 
+            self.round()
+            print(SEP)
         if self.rounds == 1:
             print("A shame. Happy gambling!")
         else:
