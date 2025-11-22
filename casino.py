@@ -8,9 +8,9 @@ FACEDOWN = "purple"
 RICH = True
 SEP = "________________________________"
 BLACKJACK_HELP = """
-0 / H - Hit
-1 / S - Stand
-2 / D - Double down (x2 bet, take 1 card, stand)"""
+1 / H - Hit
+2 / S - Stand
+3 / D - Double down (x2 bet, take 1 card, stand)"""
 
 class Player:
     def __init__(self, name: str = "Player", money: float = 0, skill: int = 0, age: int = 18):
@@ -217,7 +217,7 @@ class Blackjack:
         """Resets the round, returning all cards to the deck."""
         self.dealerhand.discard(self.deck)
         for h in self.playerhands.values(): h.discard(self.deck)
-        self.bets = {[(player,0) for player in self.players]}
+        self.bets = dict([(player,0) for player in self.players])
         self.deck.shuffle()
         for i in range(self.deck.size):
             self.deck[i].visible = True
@@ -257,9 +257,9 @@ class Blackjack:
     def payout(self, info: bool = True):
         """Pays players and updates their stats."""
         for p in self.players:
-            x = self.determine(self.playerhands[p])
+            x = self.determine(self.playerhands[p], info=p.name)
             p.money += x*self.bets[p]
-            if info and x!=0: print(f"{p.name} {"wins" if int(x>0) else "loses"} {abs(x*self.bets[p])}$!")
+            if info and x!=0: print(f"{p.name} {"earns" if int(x>0) else "pays"} {abs(x*self.bets[p])}$!")
             if self.casino is not None: self.casino.money -= x*self.bets[p]
             p.wins += int(x>0)
             p.losses += int(x<0)
@@ -283,11 +283,11 @@ class Blackjack:
             if info: print(f"[red1]Dealer wins against {info}.[/red1]")
             return -1
         else:
-            if info:  print("Tie.")
+            if info:  print(f"{info} tied.")
             return 0
     def player_turn(self, player: Player):
         """Handles an individual player's turn."""
-        print(f"{player.name}'s turn.\n\nDealer's hand:")
+        print(f"| [bold]{player.name}[/bold]'s turn. |\n\nDealer's hand:")
         print(self.dealerhand)
         while True:
             print(f"\n{player.name}'s hand:")
@@ -297,17 +297,17 @@ class Blackjack:
             if v == 21:
                 print("[green1]Natural blackjack![/green1]")
                 break
-            x = input(f"[{player.name}] > ").lower()
-            if x in ['0','h','hit']:
+            x = input(f"\n[{player.name}] > ").lower()
+            if x in ['1','h','hit']:
                 print("Drew:",self.deck.peek()[0])
                 self.draw(player)
                 if self.value(self.playerhands[player])>21:
                     print("[red]Bust.[/red]")
                     break
-            elif x in ['1','s','stand']:
+            elif x in ['2','s','stand']:
                 print("Standing.")
                 break
-            elif x in ['2','double','2x','double down']:
+            elif x in ['3','double','2x','double down']:
                 print("Doubling.")
                 self.bets[player]*=2
                 print("Drew:",self.deck.peek()[0])
@@ -342,13 +342,14 @@ class Blackjack:
         print(SEP)
         print("\nDealing cards...\n")
         self.deal()
-        print("Dealer's hand:",self.dealerhand)
+        print("Dealer's hand:",self.dealerhand,f"({self.value(self.dealerhand)})")
         print(SEP)
         # Player turns
         for p in self.players:
             self.player_turn(p)
         # Dealer's turn
         print("\nThe dealer is playing...")
+        self.dealer_turn()
         print("Dealer's hand:",self.dealerhand)
         # Payout
         print(f"Dealer's value: {self.value(self.dealerhand)}")
@@ -356,7 +357,7 @@ class Blackjack:
         self.payout(info=True)
         self.rounds += 1
     def mainloop(self, players: Player | list | None = None):
-        print("[bold]Welcome to Blackjack![/bold]")
+        print("\n[bold]Welcome to Blackjack![/bold]")
         if players is None:
             players = Player(money=100)
         if isinstance(players,Player): players = [players]
@@ -365,9 +366,10 @@ class Blackjack:
             print(f"""Player options are as follows. Type 'help' to see them again:{BLACKJACK_HELP}""")
             print(SEP)
         print(f"\nHello {', '.join([p.name for p in players])}! You have played {self.rounds-1} rounds. Want to play {"again" if self.rounds>1 else '(Enter/X)'}?")
-        while input(f"Play {"again" if self.rounds>1 else '(Enter/X)'}?\n> ").lower() not in ['x','0',"no"]: 
+        while input(f"Play {"again" if self.rounds>1 else '(Enter/X)'}?\n> ").lower() not in ['x','0',"no",'n']: 
             self.round()
             print(SEP)
+            self.reset()
         if self.rounds == 1:
             print("A shame. Happy gambling!")
         else:
