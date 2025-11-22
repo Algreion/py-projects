@@ -13,7 +13,7 @@ BLACKJACK_HELP = """
 3 / D - Double down (x2 bet, take 1 card, stand)"""
 
 class Player:
-    def __init__(self, name: str = "Player", money: float = 0, skill: int = 0, age: int = 18):
+    def __init__(self, name: str = "Player", money: float = 100, skill: int = 0, age: int = 18):
         self.name = name
         self.age = age
         self.money = money
@@ -174,35 +174,62 @@ class Casino:
         self.name = name
         self.money = money
         self.size = 0
+        self.ID = 0
         self.db = dict()
         self.dealer = dealer
+        self.games = {"bj": Blackjack(casino=self), "uno": UNO()}
     def __repr__(self):
         return f"Casino(name={self.name},money={self.money},players={self.size})"
     def __str__(self):
         return self.name
+    def play(self, game: str = "bj", players: Player | list | None = None):
+        if game not in self.games:
+            print("Game not available.")
+        else:
+            gains = []
+            if players is not None:
+                if isinstance(players,Player): players = [players]
+                gains = [p.money for p in players]
+            rounds = self.games[game].mainloop(players=players)
+            if players is not None and rounds>1:
+                gains = [p.money - gains[i] for i,p in enumerate(players)]
+                print(f"Played {rounds} rounds.")
+                for i in range(len(players)):
+                    color = "red1" if gains[i]<0 else "green1" if gains[i]>0 else "white"
+                    print(f"{players[i]} {"earned" if color=="green1" else "lost" if color=="red1" else "made"} [{color}]{abs(gains[i])}[/{color}]$.")
     def players(self):
-        return list(self.db.keys())
+        return list(self.db.values())
+    def playerID(self, player: Player) -> int | None:
+        try: return dict([(v,k) for k,v in self.db.items()])[player]
+        except: return None
     def register(self, players: Player | list):
         if isinstance(players,Player): players = [players]
         for p in players:
-            self.db[p] = self.size
+            if self.playerID(p) is not None: continue
+            self.db[self.ID] = p
+            self.ID += 1
             self.size += 1
-    def remove(self, players: Player | list):
-        if isinstance(players,Player): players = [players]
-        for p in players:
-            if p in self.db:
-                del self.db[p]
+    def remove(self, ids: Player | list):
+        if isinstance(ids,int): ids = [ids]
+        for i in ids:
+            if i in self.db:
+                del self.db[i]
                 self.size -= 1
 
 class Blackjack:
-    def __init__(self, players: Player | list | None, casino: Casino | None = None):
+    def __init__(self, players: Player | list | None = None, casino: Casino | None = None):
         """States: BETTING | DEAL | PLAYER_TURN | DEALER_TURN | PAYOUT"""
         self.deck = Deck("classic")
         self.casino = casino
         self.dealer = casino.dealer if casino is not None else Player("Dealer")
         self.dealerhand = Hand(self.dealer,"Blackjack")
-        self.players = None
         self.rounds = 1
+        self.init_players(players)
+        self.deck.shuffle()
+    def __repr__(self):
+        return f"Blackjack(players={len(self.players)},rounds={self.rounds},dealer={self.dealer.name})"
+    def init_players(self, players: Player | list | None = None):
+        self.players = None
         if players is None:
             self.players = [Player()]
         else:
@@ -210,9 +237,6 @@ class Blackjack:
             self.players = players
         self.playerhands = dict([(player,Hand(player,"Blackjack")) for player in self.players])
         self.bets = dict([(player,0) for player in self.players])
-        self.deck.shuffle()
-    def __repr__(self):
-        return f"Blackjack(players={len(self.players)},rounds={self.rounds},dealer={self.dealer.name})"
     def reset(self) -> None:
         """Resets the round, returning all cards to the deck."""
         self.dealerhand.discard(self.deck)
@@ -356,11 +380,12 @@ class Blackjack:
         print("Results:")
         self.payout(info=True)
         self.rounds += 1
-    def mainloop(self, players: Player | list | None = None):
+    def mainloop(self, players: Player | list | None = None) -> int:
+        """Handles a full game. Returns number of played rounds."""
         print("\n[bold]Welcome to Blackjack![/bold]")
-        if players is None:
-            players = Player(money=100)
-        if isinstance(players,Player): players = [players]
+        if players is not None: self.init_players(players)
+        elif isinstance(players,Player): players = [players]
+        players = self.players
         if self.rounds == 1:
             print(SEP)
             print(f"""Player options are as follows. Type 'help' to see them again:{BLACKJACK_HELP}""")
@@ -373,10 +398,12 @@ class Blackjack:
         if self.rounds == 1:
             print("A shame. Happy gambling!")
         else:
-            print("Thanks for playing. Come again soon!")
+            print("Thanks for playing Blackjack. Come again soon!")
+        return self.rounds-1
 
 class UNO:
-    def __init__(self, ):
+    def __init__(self, casino: Casino | None = None):
         self.deck = Deck("UNO")
+        self.casino = casino
     def __repr__(self):
-        return f"UNO()"
+        return f"UNO({f"casino={self.casino}" if self.casino is not None else ''})"
