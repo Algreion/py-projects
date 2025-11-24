@@ -1,7 +1,9 @@
 
 from rich import print
+from random import choice
 import os
-#TODO: mainloop, check if everything works, more pieces, promotion, en passant, check & checkmate (forced moves), text colors, improved move/capture option render, make in pygame?
+#TODO: mainloop, check if everything works, more pieces, promotion, en passant, improve AI and add match against it, check & checkmate (forced moves), text colors, improved move/capture option render, make in pygame?
+#note: bug in line 302 -> self.move_options -> self.castle -> self.move(A,B) -> if (p:=self.lookup((x2,y2))).type == 'king' -> (AttributeError: 'NoneType' object has no attribute 'type') | run random for a while to find it
 
 RICH = True # Colors
 BLACK = 'cyan'
@@ -289,7 +291,104 @@ class Board:
         self.move(B,A)
         self.move(D,C)
         return True
-    
+    def all_moves(self, color: int, capturesOnly: bool = False, movesOnly: bool = False) -> tuple:
+        """Returns a list of all possible (moves, captures) for the color. 'Only' options save time by only checking that."""
+        pieces = []
+        for w in range(self.W):
+            for h in range(self.H):
+                if self.lookup((w,h)) is not None and self.lookup((w,h)).color == color: pieces.append((w,h))
+        moves = []
+        captures = []
+        for p in pieces:
+            if not capturesOnly: moves += [f"{self.code(p)} {self.code(move)}" for move in self.move_options(p,CHECK=True,CASTLING=True)]
+            if not movesOnly: captures += [f"{self.code(p)} {self.code(move)}" for move in self.capture_options(p,CHECK=True)]
+        return moves,captures
+    def ai(self, color: int, logic: int = 2) -> str | None:
+        """Returns a move based on chosen logic. Returns None if no available moves.
+        Logic 1: Completely random.
+        Logic 2: Prefers captures. Still random.
+        Logic 3: Avoids captures at all costs."""
+        match logic:
+            case 1:
+                pool = self.all_moves(color)
+                pool = pool[0]+pool[1]
+                if not pool: return None
+                return choice(pool)
+            case 2:
+                pool = self.all_moves(color)
+                if pool[1]: return choice(pool[1])
+                if not pool[0]: return None
+                return choice(pool[0])
+            case _:
+                pool = self.all_moves(color)
+                if pool[0]: return choice(pool[0])
+                if not pool[1]: return None
+                return choice(pool[1])
+    def handle_turn(self, move: str, stats: list) -> bool:
+        """Handles game move with correct format. Returns True=break, False=continue"""
+        global RICH,WHITE,BLACK,EMPTY,LOGS
+        color = stats[0]
+        move = move.split()
+        if len(move) == 1:
+            move = move[0]
+            if move in ['c','castle']:
+                res = self.castle(color=color,long=False,commit=True)
+                if res: 
+                    if LOGS: print("Castled.")
+                    return True
+                else: return False
+            elif move in ['cl','lc','longcastle']:
+                res = self.castle(color=color,long=True,commit=True)
+                if res: 
+                    if LOGS: print("Castled queen side.")
+                    return True
+                else: return False
+            if ',' in move:
+                x,y = move.split(',')
+                move = (int(x),int(y))
+            if self.lookup(move) is None:
+                print("Square is empty.")
+                return False
+            elif self.lookup(move).color != color:
+                print("Piece belongs to opponent.")
+                return False
+            print("Move options:",self.convert(self.move_options(move,CHECK=True,CASTLING=True)))
+            print("Capture options:",self.convert(self.capture_options(move,CHECK=True)))
+            return False
+        elif len(move) == 2:
+            moveA,moveB = move
+            if ',' in moveA: 
+                x,y = moveA.split(',')
+                moveA = (int(x),int(y))
+            if ',' in moveB: 
+                x,y = moveB.split(',')
+                moveB = (int(x),int(y))
+            if self.lookup(moveA) is None:
+                print("Square is empty.")
+                return False
+            elif self.lookup(moveA).color != color:
+                print("Piece belongs to opponent.")
+                return False
+            opt, cap = self.move_options(moveA,CHECK=True), self.capture_options(moveA,CHECK=True)
+            if self.ind(moveB) in opt:
+                self.move(moveA,moveB)
+                if moveA == 'e1': self.whitemoved[1] = True
+                elif moveA == 'a1': self.whitemoved[0] = True
+                elif moveA == 'h1': self.whitemoved[2] = True
+                elif moveA == 'e8': self.blackmoved[1] = True
+                elif moveA == 'a8': self.blackmoved[0] = True
+                elif moveA == 'h8': self.blackmoved[2] = True
+                if LOGS: print(f"{self.lookup(moveB).type.capitalize()} moved to {self.code(moveB)}.")
+                return True
+            elif self.ind(moveB) in cap:
+                capt = self.lookup(moveB).type.capitalize()
+                self.capture(moveA, moveB)
+                if LOGS: print(f"{self.lookup(moveB).type.capitalize()} captured {capt} on {self.code(moveB)}.")
+                return True
+            else:
+                print("Invalid move. Try typing the piece to see available moves.")
+        else:
+            print("Unknown input. Type 'help' for info.")
     def turn(self, stats: list) -> bool | list:
         """Turn of specified color. Returns whether to continue."""
         global RICH,WHITE,BLACK,EMPTY,LOGS
@@ -307,7 +406,7 @@ class Board:
                 print("""Use chess notation or x,y pairs.
 - A = Shows all available moves from square. Ex: a1
 - A B = Moves piece in square to specified. Ex: 1,2 1,4
-- quit | info | save/load (file) | swap | show | logs | color (white/black/empty COLOR)""")
+- quit | info | save/load (file) | swap | show | logs | color (white/black/empty COLOR) | all (moves/captures) | random (1/2/3)""")
                 continue
             elif move in ['stop','cancel','x','quit']: 
                 print("Cancelled.")
@@ -335,15 +434,38 @@ class Board:
                     return [color]
                 return new
             elif move in ['i','info']:
-                print(f"Toggled info {"OFF" if info else "OFF"}.")
+                print(f"Toggled info {"OFF" if info else "ON"}.")
                 return [color, int(not info)]
             elif move == 'logs':
-                print(f"Toggled logs {"OFF" if LOGS else "OFF"}.")
+                print(f"Toggled logs {"OFF" if LOGS else "ON"}.")
                 LOGS = not LOGS
-                continue
+                return [color]
             elif move == 'swap':
                 print(f"Toggled swapping {"OFF" if swap else "ON"}.")
                 return [color, info, int(not swap)]
+            elif move.split()[0] == 'all':
+                move = move.split()
+                if len(move) == 1: 
+                    pool = self.all_moves(color)
+                    print(f"All available moves:\n{pool[0]}\nAll available captures:\n{pool[1]}")
+                elif move[1] in ['c','captures']: print(f"All available captures:\n{self.all_moves(color,capturesOnly=True)[1]}")
+                elif move[1] in ['m','moves']: print(f"All available moves (excluding captures):\n{self.all_moves(color,movesOnly=True)[0]}")
+                else: print("Invalid input. Options are 'all', 'all moves' or 'all captures'.")
+                continue
+            elif move.split()[0] in ['rand','random','r']:
+                if len(move) == 1: logic = 2
+                else:
+                    if not move.split()[1].isdigit():
+                        print("Logic must be a number.")
+                    logic = int(move.split()[1])
+                m = self.ai(color,logic)
+                if m is None: 
+                    print("No valid move found.")
+                    continue
+                else:
+                    outcome = self.handle_turn(move=m,stats=stats)
+                    if outcome: break
+                    else: continue
             elif move.split()[0] in ['color','rich']:
                 if len(move.split()) == 1:
                     print(f"Toggled colors {"OFF" if RICH else "ON"}.")
@@ -367,68 +489,11 @@ class Board:
                 else:
                     print("Invalid color change. Type 'color' to toggle or 'color white/black/empty COLOR'.")
                     continue
-            move = move.split()
-            try:
-                if len(move) == 1:
-                    move = move[0]
-                    if move in ['c','castle']:
-                        res = self.castle(color=color,long=False,commit=True)
-                        if res: 
-                            if LOGS: print("Castled.")
-                            break
-                        else: continue
-                    elif move in ['cl','lc','longcastle']:
-                        res = self.castle(color=color,long=True,commit=True)
-                        if res: 
-                            if LOGS: print("Castled queen side.")
-                            break
-                        else: continue
-                    if ',' in move:
-                        x,y = move.split(',')
-                        move = (int(x),int(y))
-                    if self.lookup(move) is None:
-                        print("Square is empty.")
-                        continue
-                    elif self.lookup(move).color != color:
-                        print("Piece belongs to opponent.")
-                        continue
-                    print("Move options:",self.convert(self.move_options(move,CHECK=True,CASTLING=True)))
-                    print("Capture options:",self.convert(self.capture_options(move,CHECK=True)))
-                    continue
-                elif len(move) == 2:
-                    moveA,moveB = move
-                    if ',' in moveA: 
-                        x,y = moveA.split(',')
-                        moveA = (int(x),int(y))
-                    if ',' in moveB: 
-                        x,y = moveB.split(',')
-                        moveB = (int(x),int(y))
-                    if self.lookup(moveA) is None:
-                        print("Square is empty.")
-                        continue
-                    elif self.lookup(moveA).color != color:
-                        print("Piece belongs to opponent.")
-                        continue
-                    opt, cap = self.move_options(moveA,CHECK=True), self.capture_options(moveA,CHECK=True)
-                    if self.ind(moveB) in opt:
-                        self.move(moveA,moveB)
-                        if moveA == 'e1': self.whitemoved[1] = True
-                        elif moveA == 'a1': self.whitemoved[0] = True
-                        elif moveA == 'h1': self.whitemoved[2] = True
-                        elif moveA == 'e8': self.blackmoved[1] = True
-                        elif moveA == 'a8': self.blackmoved[0] = True
-                        elif moveA == 'h8': self.blackmoved[2] = True
-                        if LOGS: print(f"{self.lookup(moveB).type.capitalize()} moved to {self.code(moveB)}.")
-                        break
-                    elif self.ind(moveB) in cap:
-                        capt = self.lookup(moveB).type.capitalize()
-                        self.capture(moveA, moveB)
-                        if LOGS: print(f"{self.lookup(moveB).type.capitalize()} captured {capt} on {self.code(moveB)}.")
-                        break
-                    else:
-                        print("Invalid move. Try typing the piece to see available moves.")
-                else: print("Unknown input. Type 'help' for info.")
-            except:
+            if True:
+                outcome = self.handle_turn(move=move,stats=stats)
+                if outcome: break
+                else: continue
+            else:
                 print("Unknown input. Type 'help' for info.")
         if LOGS: print(f"{"White" if color==1 else "Black"}'s material advantage: {self.advantage(color=color)}")
         return True
