@@ -1,5 +1,12 @@
 
-#TODO: mainloop, check if everything works, more pieces, position saving, castle, promotion, en passant, check & checkmate (forced moves), piece colors in terminal (rich), make in pygame?
+from rich import print
+import os
+#TODO: mainloop, check if everything works, more pieces, castle, promotion, en passant, check & checkmate (forced moves), text colors, improved move/capture option render, make in pygame?
+
+RICH = True # Colors
+BLACK = 'cyan'
+WHITE = 'cornsilk1'
+EMPTY = 'bold'
 
 class Board:
     def __init__(self, N: tuple = (8,8), filled: bool = False, type: str | None = 'Chess'):
@@ -8,7 +15,7 @@ class Board:
         self.type = type
         self.board = [[None for _ in range(self.W)] for _ in range(self.H)]
         self.symbol_dict = {"king":"♔","queen":"♕","rook":"♖","bishop":"♗","knight":"♘","pawn":"♙"}
-        self.simplified_dict = {"king":"k","queen":"q","rook":"r","bishop":"b","knight":"n","pawn":"p"}
+        self.simplified_dict = {"king":"k","queen":"q","rook":"r","bishop":"b","knight":"n","pawn":"p",None: '.'}
         self.gap = 2 # board str
         self.blank = '▢'
         self.white_king = 'e1'
@@ -105,7 +112,27 @@ class Board:
         self[square1] = piece1
         self[square2] = piece2
         return res
-    def show(self, color: int = 1, info: bool = True):
+    def save(self, file: str = 'board.txt', stats: list = []) -> bool:
+        """Save board state to text file. Stats also saves info: []."""
+        board = self.simplified()+'\n'
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),file), 'w') as f:
+            f.write(board)
+            if stats: f.write('!'+' '.join([str(s) for s in stats]))
+        return True
+    def load(self, file: str = 'board.txt') -> bool | list:
+        try:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),file), 'r') as f:
+                D = dict([(v,k) for k,v in self.simplified_dict.items()])
+                for y,line in enumerate(f.readlines()):
+                    if line.startswith('!'):
+                        return line[1:].split()
+                    for x,c in enumerate(line.strip()):
+                        P = D[c.lower()] if c.lower() in D else None
+                        if P is None: self[(x,y)] = None
+                        else: self[(x,y)] = Piece(P, 1 if c.isupper() else 0,self)
+            return True
+        except: return False
+    def show(self, color: int = 1, info: bool = True, RICH: bool = True):
         """Prints board with correct orientation."""
         LETTERS = "".join([chr(97+i) for i in range(self.W)])
         if color == 0: LETTERS = LETTERS[::-1]
@@ -116,7 +143,7 @@ class Board:
             res.append("|")
             if info: S = str(self.H-i) if color == 1 else str(i+1)
             else: S = ''
-            res[i] += ''.join([str(p).center(self.gap) if p is not None else self.blank.center(self.gap) for p in line])+"| "+S
+            res[i] += ''.join([(f"[{WHITE if p.color else BLACK}]" if RICH else '')+str(p).center(self.gap)+(f"[/{WHITE if p.color else BLACK}]" if RICH else '') if p is not None else (f"[{EMPTY}]" if RICH else '')+self.blank.center(self.gap)+(f"[/{EMPTY}]" if RICH else '') for p in line])+"| "+S
         return "\n".join(res)+'\n '+letters
     def lookup(self, notation: str | tuple):
         """Returns the piece on the square or none."""
@@ -137,9 +164,9 @@ class Board:
     def simplified(self) -> str:
         """Returns a simplified version of the board."""
         res = []
-        for i,line in enumerate(self.board):
-            res.append("|")
-            res[i] += ''.join([p.simplified.center(self.gap) if p is not None else "".center(self.gap) for p in line])+"|"
+        blank = self.simplified_dict[None]
+        for line in self.board:
+            res.append(''.join([p.simplified if p is not None else blank for p in line]))
         return "\n".join(res)
     def setup(self) -> bool:
         """Sets up board with correct pieces."""
@@ -221,24 +248,79 @@ class Board:
         """Returns point advantage for color."""
         if color == 0: color = -1
         return color*(sum(p.value() for p in self.black_captured)-sum(p.value() for p in self.white_captured))
-    def turn(self, color: int = 1, reverse: bool = True, info: bool = True) -> int:
-        """Turn of specified color."""
-        reverse = color if reverse else 1
-        print('\n'+self.show(reverse,info))
+    def turn(self, stats: list) -> bool | list:
+        """Turn of specified color. Returns whether to continue."""
+        global RICH,WHITE,BLACK,EMPTY
+        color, info, swap = stats
+        reverse = color if swap else 1
+        quitcheck = False
+        print('\n'+self.show(reverse,bool(info),bool(RICH)))
         while True:
             try:
-                move = input("> ")
+                move = input("> ").lower()
             except:
                 print("Quitting...")
                 quit()
             if move in ['h','help','format']:
                 print("""Use chess notation or x,y pairs.
 - A = Shows all available moves from square. Ex: a1
-- A B = Moves piece in square to specified. Ex: 1,2 1,4""")
+- A B = Moves piece in square to specified. Ex: 1,2 1,4
+- quit | info | save/load (file) | swap | show | color (white/black/empty COLOR)""")
                 continue
             elif move in ['stop','cancel','x','quit']: 
                 print("Cancelled.")
-                break
+                return False
+            elif not move:
+                if quitcheck: return False
+                else:
+                    print("Input nothing again to quit.")
+                    quitcheck = True
+                continue
+            elif move in ['show','view']:
+                print('\n'+self.show(reverse,bool(info),bool(RICH)))
+                continue
+            elif move.split()[0] == 'save':
+                file = 'board.txt' if len(move.split())==1 else move.split()[1]
+                if self.save(file,stats): print(f"Board saved to '{file}' successfully.")
+                else: print("Error. Unable to save the board.")
+                continue
+            elif move.split()[0] == 'load':
+                file = 'board.txt' if len(move.split())==1 else move.split()[1]
+                new = self.load(file)
+                if new: print("Board loaded successfully.")
+                else:
+                    print(f"Error loading the board. Check if {file} exists.")
+                    return [color]
+                return new
+            elif move in ['i','info']:
+                print(f"Toggled info {"OFF" if info else "OFF"}.")
+                return [color, int(not info)]
+            elif move == 'swap':
+                print(f"Toggled swapping {"OFF" if swap else "ON"}.")
+                return [color, info, int(not swap)]
+            elif move.split()[0] in ['color','rich']:
+                if len(move.split()) == 1:
+                    print(f"Toggled colors {"OFF" if RICH else "ON"}.")
+                    RICH = not RICH
+                    return [color]
+                elif len(move.split()) == 3:
+                    which, col = move.split()[1:]
+                    if which in ['w','white','1']: WHITE, old = col, WHITE
+                    elif which in ['black','0','b']: BLACK, old = col, BLACK
+                    elif which in ['blank','empty','2','e']: EMPTY, old = col, EMPTY
+                    else: print("Can only change 'white' (1), 'black' (0) or 'empty' (2). Note some colors may not work, use the python rich database for info.")
+                    try:
+                        print('\n'+self.show(reverse,bool(info),bool(RICH)))
+                        print("Color changed successfully. ")
+                    except:
+                        if which in ['w','white','1']: WHITE = old
+                        elif which in ['black','0','b']: BLACK = old
+                        elif which in ['blank','empty','2','e']: EMPTY = old
+                        print("Invalid color.")
+                    continue
+                else:
+                    print("Invalid color change. Type 'color' to toggle or 'color white/black/empty COLOR'.")
+                    continue
             move = move.split()
             try:
                 if len(move) == 1:
@@ -285,18 +367,25 @@ class Board:
             except:
                 print("Unknown input. Type 'help' for info.")
         if info: print(f"{"White" if color==1 else "Black"}'s material advantage: {self.advantage(color=color)}")
+        return True
     
-    def mainloop(self, reverse: bool = True):
+    def mainloop(self):
         """Full match. If reverse is False, only show board in main orientation.
         Still WIP, need to add checkmates, etc."""
         color = 1
+        info = 1
+        swap = 0
         while True:
             print(f"\n{"White" if color==1 else "Black"}'s turn.")
-            self.turn(color, reverse=reverse)
+            stats = [color, info, swap]
+            status = self.turn(stats)
+            if status is False: break
             color = int(not color)
-
-
-
+            if isinstance(status,list):
+                for i,s in enumerate(status):
+                    if i == 0: color = int(s)
+                    if i == 1: info = int(s)
+                    if i == 2: swap = int(s)
 class Piece:
     def __init__(self, type: str, color: int, board: Board | None = None):
         """Chess piece. Color 0 = Black, 1 = White.
@@ -371,4 +460,4 @@ class Piece:
 if __name__ == '__main__':
     b = Board(filled=True)
     print("WIP chess.")
-    b.mainloop(False)
+    b.mainloop()
