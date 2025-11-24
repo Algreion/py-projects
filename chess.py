@@ -1,12 +1,14 @@
 
 from rich import print
 import os
-#TODO: mainloop, check if everything works, more pieces, castle, promotion, en passant, check & checkmate (forced moves), text colors, improved move/capture option render, make in pygame?
+#TODO: mainloop, check if everything works, more pieces, promotion, en passant, check & checkmate (forced moves), text colors, improved move/capture option render, make in pygame?
 
 RICH = True # Colors
 BLACK = 'cyan'
 WHITE = 'cornsilk1'
 EMPTY = 'bold'
+
+LOGS = True
 
 class Board:
     def __init__(self, N: tuple = (8,8), filled: bool = False, type: str | None = 'Chess'):
@@ -19,6 +21,8 @@ class Board:
         self.gap = 2 # board str
         self.blank = '▢'
         self.white_king = 'e1'
+        self.whitemoved = [False,False,False]
+        self.blackmoved = [False,False,False]
         self.black_king = 'e8'
         self.white_captured,self.black_captured = set(),set()
         self.move_dict = {
@@ -113,17 +117,21 @@ class Board:
         self[square2] = piece2
         return res
     def save(self, file: str = 'board.txt', stats: list = []) -> bool:
-        """Save board state to text file. Stats also saves info: []."""
+        """Save board state to text file. Stats also saves info: [Turn, Info, Swap]."""
         board = self.simplified()+'\n'
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),file), 'w') as f:
             f.write(board)
-            if stats: f.write('!'+' '.join([str(s) for s in stats]))
+            f.write('='+','.join([str(int(c)) for c in self.whitemoved])+' '+','.join([str(int(c)) for c in self.blackmoved]))
+            if stats: f.write('\n!'+' '.join([str(s) for s in stats]))
         return True
     def load(self, file: str = 'board.txt') -> bool | list:
         try:
             with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),file), 'r') as f:
                 D = dict([(v,k) for k,v in self.simplified_dict.items()])
                 for y,line in enumerate(f.readlines()):
+                    if line.startswith('='):
+                        self.whitemoved,self.blackmoved = [bool(int(i)) for i in line[1:].split()[0].split(',')],[bool(int(i)) for i in line[1:].split()[1].split(',')]
+                        continue
                     if line.startswith('!'):
                         return line[1:].split()
                     for x,c in enumerate(line.strip()):
@@ -152,10 +160,12 @@ class Board:
     def ind(self, notation: str) -> tuple:
         "Chess notation -> List index (x,y)"
         if type(notation) == tuple: return notation
-        x,y = notation
-        x = "abcdefgh".index(x)
-        y = int(y)-1
-        return (x,y)
+        try:
+            x,y = notation
+            x = "abcdefgh".index(x)
+            y = int(y)-1
+            return (x,y)
+        except: return notation
     def code(self, index: tuple) -> str:
         """List index (x,y) -> Chess Notation"""
         if type(index) == str: return index
@@ -214,13 +224,16 @@ class Board:
                 elif p.color == 0: self.black_king = self.code((x2,y2))
             return True
         else: return False
-    def move_options(self, square: str | tuple, CHECK: bool = False) -> list:
-        """Returns a list of all possible move options for square."""
+    def move_options(self, square: str | tuple, CHECK: bool = False, CASTLING: bool = False) -> list:
+        """Returns a list of all possible move options for square. Note castling is handled in self.turn"""
         x,y = self.ind(square)
         piece = self.lookup((x,y))
         if piece is None: return []
         moves = piece.move((x,y))
-        if piece.type == 'king': moves = list(filter(lambda X: self.check_king_move((x,y),X),moves))
+        if piece.type == 'king': 
+            moves = list(filter(lambda X: self.check_king_move((x,y),X),moves))
+            if CASTLING and self.castle(piece.color,long=False,commit=False): moves += ['castle']
+            if CASTLING and self.castle(piece.color,long=True,commit=False): moves += ['longcastle']
         elif CHECK: moves = list(filter(lambda X: self.validmove((x,y),X,piece.color),moves))
         return moves
     def convert(self, values: str | tuple | list) -> str | tuple | list:
@@ -248,9 +261,38 @@ class Board:
         """Returns point advantage for color."""
         if color == 0: color = -1
         return color*(sum(p.value() for p in self.black_captured)-sum(p.value() for p in self.white_captured))
+    def castle(self, color: int, long: bool = False, commit: bool = False) -> bool:
+        """Castles and returns if move was successful."""
+        check = self.whitemoved if color==1 else self.blackmoved
+        if color == 1:
+            C = 'e1'
+            if long: i,A,B,D,E = 0,'a1','c1','b1',self.lookup('d1') is None
+            else: i,A,B,D,E = 2,'h1','f1','g1',True
+        else:
+            C = 'e8'
+            if long: i,A,B,D,E = 0,'a8','c8','b8',self.lookup('d8') is None
+            else: i,A,B,D,E = 2,'h8','f8','g8',True
+        if check[1] or check[i] or not (self.lookup(B) is None and self.lookup(D) is None and E):
+            if commit: print("Unable to castle.")
+            return False
+        self.move(A,B)
+        self.move(C,D)
+        if self.check(D):
+            self.move(B,A)
+            self.move(D,C)
+            if commit: print("Unable to castle.")
+            return False
+        if commit: 
+            if color == 1: self.whitemoved = (True,True,True)
+            else: self.blackmoved = (True,True,True)
+            return True
+        self.move(B,A)
+        self.move(D,C)
+        return True
+    
     def turn(self, stats: list) -> bool | list:
         """Turn of specified color. Returns whether to continue."""
-        global RICH,WHITE,BLACK,EMPTY
+        global RICH,WHITE,BLACK,EMPTY,LOGS
         color, info, swap = stats
         reverse = color if swap else 1
         quitcheck = False
@@ -265,7 +307,7 @@ class Board:
                 print("""Use chess notation or x,y pairs.
 - A = Shows all available moves from square. Ex: a1
 - A B = Moves piece in square to specified. Ex: 1,2 1,4
-- quit | info | save/load (file) | swap | show | color (white/black/empty COLOR)""")
+- quit | info | save/load (file) | swap | show | logs | color (white/black/empty COLOR)""")
                 continue
             elif move in ['stop','cancel','x','quit']: 
                 print("Cancelled.")
@@ -295,6 +337,10 @@ class Board:
             elif move in ['i','info']:
                 print(f"Toggled info {"OFF" if info else "OFF"}.")
                 return [color, int(not info)]
+            elif move == 'logs':
+                print(f"Toggled logs {"OFF" if LOGS else "OFF"}.")
+                LOGS = not LOGS
+                continue
             elif move == 'swap':
                 print(f"Toggled swapping {"OFF" if swap else "ON"}.")
                 return [color, info, int(not swap)]
@@ -325,6 +371,18 @@ class Board:
             try:
                 if len(move) == 1:
                     move = move[0]
+                    if move in ['c','castle']:
+                        res = self.castle(color=color,long=False,commit=True)
+                        if res: 
+                            if LOGS: print("Castled.")
+                            break
+                        else: continue
+                    elif move in ['cl','lc','longcastle']:
+                        res = self.castle(color=color,long=True,commit=True)
+                        if res: 
+                            if LOGS: print("Castled queen side.")
+                            break
+                        else: continue
                     if ',' in move:
                         x,y = move.split(',')
                         move = (int(x),int(y))
@@ -334,7 +392,7 @@ class Board:
                     elif self.lookup(move).color != color:
                         print("Piece belongs to opponent.")
                         continue
-                    print("Move options:",self.convert(self.move_options(move,CHECK=True)))
+                    print("Move options:",self.convert(self.move_options(move,CHECK=True,CASTLING=True)))
                     print("Capture options:",self.convert(self.capture_options(move,CHECK=True)))
                     continue
                 elif len(move) == 2:
@@ -354,19 +412,25 @@ class Board:
                     opt, cap = self.move_options(moveA,CHECK=True), self.capture_options(moveA,CHECK=True)
                     if self.ind(moveB) in opt:
                         self.move(moveA,moveB)
-                        if info: print(f"{self.lookup(moveB).type.capitalize()} moved to {self.code(moveB)}.")
+                        if moveA == 'e1': self.whitemoved[1] = True
+                        elif moveA == 'a1': self.whitemoved[0] = True
+                        elif moveA == 'h1': self.whitemoved[2] = True
+                        elif moveA == 'e8': self.blackmoved[1] = True
+                        elif moveA == 'a8': self.blackmoved[0] = True
+                        elif moveA == 'h8': self.blackmoved[2] = True
+                        if LOGS: print(f"{self.lookup(moveB).type.capitalize()} moved to {self.code(moveB)}.")
                         break
                     elif self.ind(moveB) in cap:
                         capt = self.lookup(moveB).type.capitalize()
                         self.capture(moveA, moveB)
-                        if info: print(f"{self.lookup(moveB).type.capitalize()} captured {capt} on {self.code(moveB)}.")
+                        if LOGS: print(f"{self.lookup(moveB).type.capitalize()} captured {capt} on {self.code(moveB)}.")
                         break
                     else:
                         print("Invalid move. Try typing the piece to see available moves.")
                 else: print("Unknown input. Type 'help' for info.")
             except:
                 print("Unknown input. Type 'help' for info.")
-        if info: print(f"{"White" if color==1 else "Black"}'s material advantage: {self.advantage(color=color)}")
+        if LOGS: print(f"{"White" if color==1 else "Black"}'s material advantage: {self.advantage(color=color)}")
         return True
     
     def mainloop(self):
