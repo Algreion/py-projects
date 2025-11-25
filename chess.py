@@ -2,7 +2,7 @@
 from rich import print
 from random import choice
 import os
-#TODO: mainloop, check if everything works, more pieces, promotion, en passant, improve AI and add match against it, text colors, improved move/capture option render, make in pygame?
+#TODO: mainloop, check if everything works, more pieces, promotion, improve AI and add match against it, text colors, improved move/capture option render, make in pygame?
 
 
 RICH = True # Colors
@@ -11,6 +11,7 @@ WHITE = 'cornsilk1'
 EMPTY = 'bold'
 
 LOGS = True
+SEP = "____________________________"
 
 class Board:
     def __init__(self, N: tuple = (8,8), filled: bool = False, type: str | None = 'Chess'):
@@ -26,6 +27,7 @@ class Board:
         self.whitemoved = [False,False,False]
         self.blackmoved = [False,False,False]
         self.black_king = 'e8'
+        self.white_enpassant,self.black_enpassant = None, None
         self.white_captured,self.black_captured = set(),set()
         self.move_dict = {
         "king":    [(1,0), (-1,0), (0,1), (0,-1),
@@ -118,16 +120,29 @@ class Board:
                 if self.lookup((x+dx*(i+1),y+dy*(i+1))) is not None: break
             res.append(dire)
         return res
-    def validmove(self, square1: str | tuple, square2: str | tuple,color: int) -> bool:
+    def validmove(self, square1: str | tuple, square2: str | tuple, color: int, enpassant: bool = False) -> bool:
         """Returns whether move would put king in check."""
         piece1, piece2 = self.lookup(square1),self.lookup(square2)
-        del self[square1]
-        self[square2] = piece1
-        if piece1 is not None and piece1.type == 'king': king = square2
-        else: king = self.white_king if color==1 else self.black_king
-        res = not self.check(king)
-        self[square1] = piece1
-        self[square2] = piece2
+        if enpassant:
+            del self[square1]
+            self[square2] = piece1
+            x,y = self.ind(square2)
+            if color == 1: y -= 1
+            else: y += 1
+            piece = self.lookup((x,y))
+            del self[(x,y)]
+            res = not self.checkcheck(color)
+            self[square1] = piece1
+            self[square2] = piece2
+            self[(x,y)] = piece
+        else:
+            del self[square1]
+            self[square2] = piece1
+            if piece1 is not None and piece1.type == 'king': king = square2
+            else: king = self.white_king if color==1 else self.black_king
+            res = not self.check(king)
+            self[square1] = piece1
+            self[square2] = piece2
         return res
     def save(self, file: str = 'board.txt', stats: list = []) -> bool:
         """Save board state to text file. Stats also saves info: [Turn, Info, Swap]."""
@@ -242,7 +257,7 @@ class Board:
             return True
         else: return False
     def move_options(self, square: str | tuple, CHECK: bool = False, CASTLING: bool = False) -> list:
-        """Returns a list of all possible move options for square. Note castling is handled in self.turn"""
+        """Returns a list of all possible move options for square. Note castling is handled in self.handle_turn"""
         x,y = self.ind(square)
         piece = self.lookup((x,y))
         if piece is None: return []
@@ -263,7 +278,7 @@ class Board:
         piece = self.lookup((x,y))
         if piece is None: return []
         moves = piece.capture((x,y),override=override)
-        if CHECK: moves = list(filter(lambda X: self.validmove((x,y),X,piece.color),moves))
+        if CHECK: moves = list(filter(lambda X: self.validmove((x,y),X,piece.color,enpassant=self.lookup(X) is None),moves))
         return moves
     def check_king_move(self, king: str | tuple, square: str | tuple) -> bool:
         """Returns whether king can move to square without going in check."""
@@ -387,12 +402,29 @@ class Board:
                 self.move(moveA,moveB)
                 self.whitemoved,self.blackmoved = self.helper_moved(moveA,self.whitemoved,self.blackmoved)
                 if LOGS: print(f"{self.lookup(moveB).type.capitalize()} moved to {self.code(moveB)}.")
+                if self.lookup(moveB).type == 'pawn' and abs(self.ind(moveB)[1]-self.ind(moveA)[1]) == 2:
+                    x,y = self.ind(moveB)
+                    if color == 1: self.white_enpassant = self.ind((x,y-1))
+                    else: self.black_enpassant = self.ind((x,y+1))
+                else:
+                    if color == 1: self.white_enpassant = None
+                    else: self.black_enpassant = None
                 return True
             elif self.ind(moveB) in cap:
-                capt = self.lookup(moveB).type.capitalize()
-                self.capture(moveA, moveB)
-                self.whitemoved,self.blackmoved = self.helper_moved(moveA,self.whitemoved,self.blackmoved)
-                if LOGS: print(f"{self.lookup(moveB).type.capitalize()} captured {capt} on {self.code(moveB)}.")
+                if self.lookup(moveB) is None:
+                    x,y = self.ind(moveB)
+                    if color == 1: y -= 1
+                    else: y += 1
+                    capt = self.lookup((x,y)).type.capitalize()
+                    self.capture(moveA, (x,y))
+                    self.move((x,y),moveB)
+                    if LOGS: print(f"{self.lookup(moveB).type.capitalize()} captured {capt} on {self.code(moveB)}. (En passant)")
+                else:
+                    capt = self.lookup(moveB).type.capitalize()
+                    self.capture(moveA, moveB)
+                    self.whitemoved,self.blackmoved = self.helper_moved(moveA,self.whitemoved,self.blackmoved)
+                    if LOGS: print(f"{self.lookup(moveB).type.capitalize()} captured {capt} on {self.code(moveB)}.")
+                self.white_enpassant,self.black_enpassant = None, None
                 return True
             else:
                 print("Invalid move. Try typing the piece to see available moves.")
@@ -416,7 +448,7 @@ class Board:
         quitcheck = False
         print('\n'+self.show(reverse,bool(info),bool(RICH)))
         if self.checkcheck(color):
-            if LOGS: print("King is in check!")
+            if LOGS: print("Your king is in check!")
             0
         while True:
             try:
@@ -511,11 +543,11 @@ class Board:
                 else:
                     print("Invalid color change. Type 'color' to toggle or 'color white/black/empty COLOR'.")
                     continue
-            if True:
+            try:
                 outcome = self.handle_turn(move=move,color=color)
                 if outcome: break
                 else: continue
-            else:
+            except:
                 print("Unknown input. Type 'help' for info.")
         if LOGS: print(f"{f"[{WHITE}]White[/{WHITE}]" if color==1 else f"[{BLACK}]Black[/{BLACK}]"}'s material advantage: {self.advantage(color=color)}")
         return True
@@ -527,12 +559,15 @@ class Board:
         info = 1
         swap = 0
         while True:
+            print(SEP)
             print(f"\n{f"[{WHITE}]White[/{WHITE}]" if color==1 else f"[{BLACK}]Black[/{BLACK}]"}'s turn.")
             stats = [color, info, swap]
             status = self.turn(stats)
             if status is False: break
             color = int(not color)
             if self.checkmate(color):
+                print(SEP)
+                self.view(1,info)
                 print(f"\n[bold]Checkmate![/bold] {f"[{WHITE}]White[/{WHITE}]" if color==0 else f"[{BLACK}]Black[/{BLACK}]"} has won.")
                 break
             if isinstance(status,list):
@@ -590,12 +625,19 @@ class Piece:
         """Returns possible capture options as list of (x,y). Override doesn't consider whether a piece is present."""
         x,y = location
         options = []
+        enpassant = []
         N = max(self.board.H,self.board.W)
         d = self.board.move_dict[self.type] if self.type in self.board.move_dict else []
         match self.type:
             case 'pawn':
-                if self.color==1: options = [(1,1),(-1,1)]
-                elif self.color==0: options = [(1,-1),(-1,-1)]
+                if self.color==1: 
+                    options = [(1,1),(-1,1)]
+                    if self.board.black_enpassant is not None and self.board.ind(self.board.black_enpassant) in [(x+dx,y+dy) for dx,dy in options]:
+                        enpassant.append(self.board.ind(self.board.black_enpassant))
+                elif self.color==0: 
+                    options = [(1,-1),(-1,-1)]
+                    if self.board.white_enpassant is not None and self.board.ind(self.board.white_enpassant) in [(x+dx,y+dy) for dx,dy in options]:
+                        enpassant.append(self.board.ind(self.board.white_enpassant))
             case 'knight': options = d
             case 'rook' | 'bishop' | 'queen':
                 for (dx,dy) in d:
@@ -609,7 +651,7 @@ class Piece:
             case _:
                 return []
         C = lambda X: True if override else (self.board.lookup(X) is not None and self.board.lookup(X).color != self.color)
-        return list(filter(lambda x: 0<=x[0]<self.board.W and 0<=x[1]<self.board.H and C(x),[(x+dx,y+dy) for dx,dy in options]))
+        return enpassant+list(filter(lambda x: 0<=x[0]<self.board.W and 0<=x[1]<self.board.H and C(x),[(x+dx,y+dy) for dx,dy in options]))
 
 if __name__ == '__main__':
     b = Board(filled=True)
