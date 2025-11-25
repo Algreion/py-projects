@@ -3,7 +3,7 @@ from rich import print
 from random import choice
 import os
 #TODO: mainloop, check if everything works, more pieces, promotion, en passant, improve AI and add match against it, check & checkmate (forced moves), text colors, improved move/capture option render, make in pygame?
-#note: bug in line 302 -> self.move_options -> self.castle -> self.move(A,B) -> if (p:=self.lookup((x2,y2))).type == 'king' -> (AttributeError: 'NoneType' object has no attribute 'type') | run random for a while to find it
+
 
 RICH = True # Colors
 BLACK = 'cyan'
@@ -324,10 +324,9 @@ class Board:
                 if pool[0]: return choice(pool[0])
                 if not pool[1]: return None
                 return choice(pool[1])
-    def handle_turn(self, move: str, stats: list) -> bool:
+    def handle_turn(self, move: str, color: int) -> bool:
         """Handles game move with correct format. Returns True=break, False=continue"""
         global RICH,WHITE,BLACK,EMPTY,LOGS
-        color = stats[0]
         move = move.split()
         if len(move) == 1:
             move = move[0]
@@ -372,23 +371,29 @@ class Board:
             opt, cap = self.move_options(moveA,CHECK=True), self.capture_options(moveA,CHECK=True)
             if self.ind(moveB) in opt:
                 self.move(moveA,moveB)
-                if moveA == 'e1': self.whitemoved[1] = True
-                elif moveA == 'a1': self.whitemoved[0] = True
-                elif moveA == 'h1': self.whitemoved[2] = True
-                elif moveA == 'e8': self.blackmoved[1] = True
-                elif moveA == 'a8': self.blackmoved[0] = True
-                elif moveA == 'h8': self.blackmoved[2] = True
+                self.whitemoved,self.blackmoved = self.helper_moved(moveA,self.whitemoved,self.blackmoved)
                 if LOGS: print(f"{self.lookup(moveB).type.capitalize()} moved to {self.code(moveB)}.")
                 return True
             elif self.ind(moveB) in cap:
                 capt = self.lookup(moveB).type.capitalize()
                 self.capture(moveA, moveB)
+                self.whitemoved,self.blackmoved = self.helper_moved(moveA,self.whitemoved,self.blackmoved)
                 if LOGS: print(f"{self.lookup(moveB).type.capitalize()} captured {capt} on {self.code(moveB)}.")
                 return True
             else:
                 print("Invalid move. Try typing the piece to see available moves.")
         else:
             print("Unknown input. Type 'help' for info.")
+    def helper_moved(self, move: str, whitemoved: list,blackmoved: list) -> tuple:
+        """Returns (whitemoved, blackmoved)"""
+        match move:
+            case 'e1': self.whitemoved[1] = True
+            case 'a1': self.whitemoved[0] = True
+            case 'h1': self.whitemoved[2] = True
+            case 'e8': self.blackmoved[1] = True
+            case 'a8': self.blackmoved[0] = True
+            case 'h8': self.blackmoved[2] = True
+        return whitemoved,blackmoved
     def turn(self, stats: list) -> bool | list:
         """Turn of specified color. Returns whether to continue."""
         global RICH,WHITE,BLACK,EMPTY,LOGS
@@ -463,7 +468,7 @@ class Board:
                     print("No valid move found.")
                     continue
                 else:
-                    outcome = self.handle_turn(move=m,stats=stats)
+                    outcome = self.handle_turn(move=m,color=color)
                     if outcome: break
                     else: continue
             elif move.split()[0] in ['color','rich']:
@@ -490,7 +495,7 @@ class Board:
                     print("Invalid color change. Type 'color' to toggle or 'color white/black/empty COLOR'.")
                     continue
             if True:
-                outcome = self.handle_turn(move=move,stats=stats)
+                outcome = self.handle_turn(move=move,color=color)
                 if outcome: break
                 else: continue
             else:
