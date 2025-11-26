@@ -1,9 +1,19 @@
 
+pprint = print
 from rich import print
 from random import choice
 import os
-#TODO: mainloop, check if everything works, more pieces, promotion, improve AI and add match against it, text colors, improved move/capture option render, make in pygame?
 
+#TODO | 1 per day
+# Improved move/capture option render
+# Text colors (winning, losing, etc.)
+# Undo
+# Wider loop logic (Start/Restart game, track wins/losses, start match vs AI (difficulty=logic 1=3,2=1,3=3), load earlier match)
+# Surrender & Tie
+# Add easier moves (e4, Be5, Kd2, Qh4...)
+# Check if everything works properly (try a few games)
+# Add custom pieces (god piece, uncapturable, necromancer, faction swapper, new patterns, etc.)
+# Begin pygame implementation, write todo for it
 
 RICH = True # Colors
 BLACK = 'cyan'
@@ -11,7 +21,7 @@ WHITE = 'cornsilk1'
 EMPTY = 'bold'
 
 LOGS = True
-SEP = "____________________________"
+SEP = "_______________________________"
 
 class Board:
     def __init__(self, N: tuple = (8,8), filled: bool = False, type: str | None = 'Chess'):
@@ -103,6 +113,12 @@ class Board:
                         if (P:=self.lookup((w,h))) is not None and P.color == color:
                             if any([move in opts for move in self.move_options((w,h))]): return False
         return True
+    def setpiece(self, square: str | tuple, name: str | None = None, color: int | None = None):
+        """Creates or modifies an existing piece."""
+        piece = self.lookup(square)
+        if piece is None: name, color = name if name is not None else 'pawn', color if color is not None else 1
+        else: name, color = name if name is not None else piece.type, color if color is not None else piece.color
+        self[square] = Piece(name, color, self)
     def checkcheck(self, color: int) -> bool:
         """Returns whether king is in check."""
         king = self.white_king if color == 1 else self.black_king
@@ -150,6 +166,7 @@ class Board:
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),file), 'w') as f:
             f.write(board)
             f.write('='+','.join([str(int(c)) for c in self.whitemoved])+' '+','.join([str(int(c)) for c in self.blackmoved]))
+            f.write('\n&'+','.join(['' if c is None else self.code(c) for c in [self.white_enpassant,self.black_enpassant]]))
             if stats: f.write('\n!'+' '.join([str(s) for s in stats]))
         return True
     def load(self, file: str = 'board.txt') -> bool | list:
@@ -157,8 +174,11 @@ class Board:
             with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),file), 'r') as f:
                 D = dict([(v,k) for k,v in self.simplified_dict.items()])
                 for y,line in enumerate(f.readlines()):
-                    if line.startswith('='):
+                    if line.startswith('='): # Castling check
                         self.whitemoved,self.blackmoved = [bool(int(i)) for i in line[1:].split()[0].split(',')],[bool(int(i)) for i in line[1:].split()[1].split(',')]
+                        continue
+                    elif line.startswith('&'):  # En Passant check
+                        self.white_enpassant,self.black_enpassant = [c if c else None for c in line[1:].strip().split(',')]
                         continue
                     if line.startswith('!'):
                         return line[1:].split()
@@ -284,14 +304,18 @@ class Board:
         """Returns whether king can move to square without going in check."""
         x,y = self.ind(square)
         piece = self.lookup(king)
-        del b[king]
+        del self[king]
         res = not self.check((x,y),piece.color)
-        b[king] = piece
+        self[king] = piece
         return res
+    def getpieces(self, color: int | None = None) -> list:
+        """Returns a list of all pieces of specified color (or both if None)."""
+        F = lambda X: X is not None and (True if color is None else X.color == color)
+        return list(filter(F,[p for y in range(self.H) for p in self.board[y]]))
     def advantage(self, color: int = 1) -> int:
         """Returns point advantage for color."""
         if color == 0: color = -1
-        return color*(sum(p.value() for p in self.black_captured)-sum(p.value() for p in self.white_captured))
+        return color*(sum(p.value() for p in self.getpieces(1))-sum(p.value() for p in self.getpieces(0)))
     def castle(self, color: int, long: bool = False, commit: bool = False) -> bool:
         """Castles and returns if move was successful."""
         check = self.whitemoved if color==1 else self.blackmoved
@@ -320,6 +344,10 @@ class Board:
         self.move(B,A)
         self.move(D,C)
         return True
+    def checkpromo(self, square: str | tuple) -> bool:
+        """Returns whether pawn can be promoted."""
+        square, piece = self.ind(square), self.lookup(square)
+        return piece.type == 'pawn' and ((piece.color == 1 and square[1] == 7) or (piece.color == 0 and square[1] == 0))
     def all_moves(self, color: int, capturesOnly: bool = False, movesOnly: bool = False) -> tuple:
         """Returns a list of all possible (moves, captures) for the color. 'Only' options save time by only checking that."""
         pieces = []
@@ -332,7 +360,7 @@ class Board:
             if not capturesOnly: moves += [f"{self.code(p)} {self.code(move)}" for move in self.move_options(p,CHECK=True,CASTLING=True)]
             if not movesOnly: captures += [f"{self.code(p)} {self.code(move)}" for move in self.capture_options(p,CHECK=True)]
         return moves,captures
-    def ai(self, color: int, logic: int = 2) -> str | None:
+    def ai(self, color: int, logic: int = 1) -> str | None:
         """Returns a move based on chosen logic. Returns None if no available moves.
         Logic 1: Completely random.
         Logic 2: Prefers captures. Still random.
@@ -353,8 +381,8 @@ class Board:
                 if pool[0]: return choice(pool[0])
                 if not pool[1]: return None
                 return choice(pool[1])
-    def handle_turn(self, move: str, color: int) -> bool:
-        """Handles game move with correct format. Returns True=break, False=continue"""
+    def handle_turn(self, move: str, color: int) -> bool | str:
+        """Handles game move with correct format. Returns True=break, False=continue, str=pawn promotion square."""
         global RICH,WHITE,BLACK,EMPTY,LOGS
         move = move.split()
         if len(move) == 1:
@@ -409,6 +437,7 @@ class Board:
                 else:
                     if color == 1: self.white_enpassant = None
                     else: self.black_enpassant = None
+                if self.checkpromo(moveB): return moveB
                 return True
             elif self.ind(moveB) in cap:
                 if self.lookup(moveB) is None:
@@ -425,6 +454,7 @@ class Board:
                     self.whitemoved,self.blackmoved = self.helper_moved(moveA,self.whitemoved,self.blackmoved)
                     if LOGS: print(f"{self.lookup(moveB).type.capitalize()} captured {capt} on {self.code(moveB)}.")
                 self.white_enpassant,self.black_enpassant = None, None
+                if self.checkpromo(moveB): return moveB
                 return True
             else:
                 print("Invalid move. Try typing the piece to see available moves.")
@@ -441,7 +471,7 @@ class Board:
             case 'h8': self.blackmoved[2] = True
         return whitemoved,blackmoved
     def turn(self, stats: list) -> bool | list:
-        """Turn of specified color. Returns whether to continue."""
+        """Turn of specified color. Returns whether to continue. Pawn promotions handled here due to input requirement."""
         global RICH,WHITE,BLACK,EMPTY,LOGS
         color, info, swap = stats
         reverse = color if swap else 1
@@ -452,18 +482,19 @@ class Board:
             0
         while True:
             try:
+                if RICH: print(f"{f"[{WHITE}][White][/{WHITE}]" if color==1 else f"[{BLACK}][Black][/{BLACK}]"} ",end='')
                 move = input("> ").lower()
             except:
-                print("Quitting...")
+                pprint("Quitting...")
                 quit()
             if move in ['h','help','format']:
                 print("""Use chess notation or x,y pairs.
 - A = Shows all available moves from square. Ex: a1
 - A B = Moves piece in square to specified. Ex: 1,2 1,4
-- quit | info | save/load (file) | swap | show | logs | color (white/black/empty COLOR) | all (moves/captures) | random (1/2/3)""")
+- quit | info | save/load (file) | swap | show | logs | points | color (white/black/empty COLOR) | all (moves/captures) | random (1/2/3)""")
                 continue
             elif move in ['stop','cancel','x','quit']: 
-                print("Cancelled.")
+                print("Quitting game.")
                 return False
             elif not move:
                 if quitcheck: return False
@@ -520,6 +551,9 @@ class Board:
                     outcome = self.handle_turn(move=m,color=color)
                     if outcome: break
                     else: continue
+            elif move in ['points','advantage','material','mat','adv']:
+                print(f"{f"[{WHITE}]White[/{WHITE}]" if color==1 else f"[{BLACK}]Black[/{BLACK}]"}'s material advantage: {self.advantage(color=color)}")
+                continue
             elif move.split()[0] in ['color','rich']:
                 if len(move.split()) == 1:
                     print(f"Toggled colors {"OFF" if RICH else "ON"}.")
@@ -545,11 +579,24 @@ class Board:
                     continue
             try:
                 outcome = self.handle_turn(move=move,color=color)
+                if isinstance(outcome,str): # Pawn promotion
+                    print("\n")
+                    self.view(color, info)
+                    pprint(f"\nPawn at {outcome} can be promoted: ''/1/Q = Queen | 2/N = Knight | 3/R = Rook | 4/B = Bishop")
+                    if RICH: print(f"{f"[{WHITE}][White][/{WHITE}]" if color==1 else f"[{BLACK}][Black][/{BLACK}]"} ",end='')
+                    try: promo = input("> ")
+                    except: quit()
+                    match promo:
+                        case '2' | 'n': promo = 'knight'
+                        case '3' | 'r': promo = 'rook'
+                        case '4' | 'b': promo = 'bishop'
+                        case _: promo = 'queen'
+                    self.setpiece(outcome, name=promo)
+                    if LOGS: print(f"Promoted pawn on {outcome} to a {promo.capitalize()}.")
                 if outcome: break
                 else: continue
             except:
                 print("Unknown input. Type 'help' for info.")
-        if LOGS: print(f"{f"[{WHITE}]White[/{WHITE}]" if color==1 else f"[{BLACK}]Black[/{BLACK}]"}'s material advantage: {self.advantage(color=color)}")
         return True
     
     def mainloop(self):
@@ -575,6 +622,7 @@ class Board:
                     if i == 0: color = int(s)
                     if i == 1: info = int(s)
                     if i == 2: swap = int(s)
+
 class Piece:
     def __init__(self, type: str, color: int, board: Board | None = None):
         """Chess piece. Color 0 = Black, 1 = White.
@@ -591,7 +639,7 @@ class Piece:
         return self.symbol
     def value(self) -> int:
         """Returns value of piece."""
-        return self.board.points[self.type]
+        return self.board.points[self.type] if self.type in self.board.points else 0
     def options(self, location: tuple) -> list:
         """Returns all possible move options on empty board, as list of (x,y)."""
         x,y = location
@@ -654,7 +702,7 @@ class Piece:
         return enpassant+list(filter(lambda x: 0<=x[0]<self.board.W and 0<=x[1]<self.board.H and C(x),[(x+dx,y+dy) for dx,dy in options]))
 
 if __name__ == '__main__':
-    b = Board(filled=True)
+    g = Board(filled=True)
     print("WIP chess.")
-    b.mainloop()
+    g.mainloop()
 
