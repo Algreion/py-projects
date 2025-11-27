@@ -5,11 +5,11 @@ from random import choice,randint
 import os
 
 #TODO | 1 per day
-# Add easier moves (e4, Be5, Kd2, Qh4...)
+# Simpler moves (Be4, Ka1, Pd5)
 # Check if everything works properly (try a few games)
 # Add custom pieces (god piece, uncapturable, necromancer, faction swapper, new patterns, etc.)
 # Begin pygame implementation, write todo for it
-# Misc: Undo, improved text colors, in-game admin commands (spawn/del piece, add custom, etc.)
+# Misc: Undo, improved text colors
 
 RICH = True # Colors
 BLACK = 'cyan'
@@ -19,7 +19,7 @@ EMPTY = 'bold'
 LOGS = True
 SEP = "_______________________________"
 
-ADMIN = False
+ADMIN = True
 
 class Board:
     def __init__(self, N: tuple = (8,8), filled: bool = False, type: str | None = 'Chess'):
@@ -31,10 +31,10 @@ class Board:
         self.simplified_dict = {"king":"k","queen":"q","rook":"r","bishop":"b","knight":"n","pawn":"p",None: '.'}
         self.gap = 2 # board str
         self.blank = '▢'
-        self.white_king = 'e1'
         self.whitemoved = [True,True,True]
         self.blackmoved = [True,True,True]
-        self.black_king = 'e8'
+        self.white_king = None
+        self.black_king = None
         self.white_enpassant,self.black_enpassant = None, None
         self.white_captured,self.black_captured = set(),set()
         self.move_dict = {
@@ -250,6 +250,8 @@ class Board:
         if (self.W,self.H) != (8,8): return False
         self.whitemoved = [False,False,False]
         self.blackmoved = [False,False,False]
+        self.white_king = 'e1'
+        self.black_king = 'e8'
         def P(type, color): return Piece(type, color, self)
         black_back = ["rook", "knight", "bishop", "queen", "king", "bishop", "knight", "rook"]
         white_back = ["rook", "knight", "bishop", "queen", "king", "bishop", "knight", "rook"]
@@ -261,6 +263,10 @@ class Board:
         return True
     def clear(self):
         """Removes all pieces."""
+        self.whitemoved = [True,True,True]
+        self.blackmoved = [True,True,True]
+        self.white_king = None
+        self.black_king = None
         self.board = [[None for _ in range(self.W)] for _ in range(self.H)]
     def move(self,square1: str | tuple, square2: str | tuple) -> bool:
         """Move piece to chosen square. Requires square to be empty."""
@@ -527,8 +533,9 @@ class Board:
             if move in ['h','help','format']:
                 print("""Use chess notation or x,y pairs.
 - A = Shows all available moves from square. Ex: a1
-- A B = Moves piece in square to specified. Ex: 1,2 1,4
-- quit | info | save/load (file) | swap | show | logs | points | color (white/black/empty COLOR) | all (moves/captures) | random (1/2/3)""")
+- A B = Moves piece in square to specified. Ex: a2 a4
+- quit | info | save (file) | swap | show | logs | color (white/black/empty COLOR)\n""")
+                if ADMIN: print("""Admin commands:\nload (file) | reset | all (moves/captures) | random (1-3) | win | forcedraw | set SQUARE PIECE (COLOR) | del SQUARE | debug\n""")
                 continue
             elif move in ['surrender','resign','giveup','stop','cancel','x','quit']: 
                 print(f"{"White" if color==1 else "Black"} resigns.")
@@ -566,12 +573,12 @@ class Board:
             elif move in ['show','view']:
                 print('\n'+self.show(reverse,bool(info),bool(RICH)))
                 continue
-            elif move.split()[0] == 'save':
+            elif move.split()[0] in ['save','export']:
                 file = 'board.txt' if len(move.split())==1 else move.split()[1]
                 if self.save(file,stats): print(f"Board saved to '{file}' successfully.")
                 else: print("Error. Unable to save the board.")
                 continue
-            elif move.split()[0] == 'load':
+            elif move.split()[0] in ['load','import'] and ADMIN:
                 file = 'board.txt' if len(move.split())==1 else move.split()[1]
                 new = self.load(file)
                 if new: print("Board loaded successfully.")
@@ -589,7 +596,7 @@ class Board:
             elif move == 'swap':
                 print(f"Toggled swapping {"OFF" if swap else "ON"}.")
                 return [color, info, int(not swap)]
-            elif move.split()[0] == 'all':
+            elif move.split()[0] == 'all' and ADMIN:
                 move = move.split()
                 if len(move) == 1: 
                     pool = self.all_moves(color)
@@ -598,7 +605,7 @@ class Board:
                 elif move[1] in ['m','moves']: print(f"All available moves (excluding captures):\n{self.all_moves(color,movesOnly=True)[0]}")
                 else: print("Invalid input. Options are 'all', 'all moves' or 'all captures'.")
                 continue
-            elif move.split()[0] in ['rand','random','r']:
+            elif move.split()[0] in ['rand','random','r'] and ADMIN:
                 if len(move) == 1: logic = 2
                 else:
                     if not move.split()[1].isdigit():
@@ -612,7 +619,7 @@ class Board:
                     outcome = self.handle_turn(move=m,color=color)
                     if outcome: break
                     else: continue
-            elif move in ['points','advantage','material','mat','adv']:
+            elif move in ['points','advantage','material','mat','adv','eval']:
                 print(f"{f"[{WHITE}]White[/{WHITE}]" if color==1 else f"[{BLACK}]Black[/{BLACK}]"}'s material advantage: {self.advantage(color=color)}")
                 continue
             elif move.split()[0] in ['color','rich']:
@@ -638,6 +645,36 @@ class Board:
                 else:
                     print("Invalid color change. Type 'color' to toggle or 'color white/black/empty COLOR'.")
                     continue
+            elif ADMIN and move.split()[0] in ['win','forcedraw','fdraw','set','del','reset','debug']:
+                move = move.split()
+                try:
+                    match move[0]:
+                        case 'win': return color
+                        case 'forcedraw' | 'fdraw': return -1
+                        case 'set':
+                            square, name = move[1],move[2]
+                            col = color if len(move) == 3 else move[3]
+                            self.setpiece(square,name,col)
+                            print(f"Set piece on {square} to {"White" if col==1 else "Black"} {name.capitalize()}.")
+                            print("\n")
+                            self.view()
+                        case 'del':
+                            square = move[1]
+                            p = self.lookup(square)
+                            if p is None: print(f"No piece on {square}.")
+                            else: print(f"Deleted {p.type.capitalize()} on {square}.")
+                            del self[square]
+                            print("\n")
+                            self.view()
+                        case 'reset':
+                            self.clear()
+                            self.setup()
+                            print("\n")
+                            self.view()
+                        case 'debug': print(f"whitemoved: {self.whitemoved} | blackmoved: {self.blackmoved} (a8,e8,h8)\nWhite King: {self.white_king} | Black King: {self.black_king}\nCaptured white: [{','.join(str(p) for p in self.white_captured)}] | Captured black: [{','.join(str(p) for p in self.black_captured)}]\nWhite enpassant: {self.white_enpassant} | Black enpassant: {self.black_enpassant}\nWhite eval: {self.advantage()} | Color={color}, Info={info}, Swap={swap}, Bot={botplay}\n")
+                except:
+                    print("Invalid command usage. Type 'help' for info.")
+                continue
             try:
                 outcome = self.handle_turn(move=move,color=color)
                 if isinstance(outcome,str): # Pawn promotion
@@ -679,7 +716,7 @@ class Board:
             if self.stalemate(color) or self.drawmate():
                 print(SEP)
                 self.view(1,info)
-                print(f"{f"[{WHITE}]White[/{WHITE}]" if color==1 else f"[{BLACK}]Black[/{BLACK}]"} is in stalemate![/bold]")
+                print(f"[bold]Stalemate![/bold]")
                 return -1
             if self.checkmate(color):
                 print(SEP)
@@ -773,7 +810,7 @@ class Piece:
 def superloop():
     """Full terminal experience."""
     global ADMIN # Add options in settings, and in-game
-    HELP = "Options:\n1. Player vs player. | 2. Player vs bot. | 3. Load previous game. | 4. Stats & Settings. | 0. Quit."
+    HELP = "Options:\n1. Player vs player. | 2. Player vs bot. | 3. Load previous game. | 4. Stats. | 0. Quit."
     print("[bold]PyChess[/bold]\n")
     pprint(HELP)
     white, black, total, botwins = 0,0,0,0
@@ -856,7 +893,7 @@ def superloop():
                     white += 1
                     black += 1
                 total += 1
-            case '4' | 'stats' | 'settings':
+            case '4' | 'stats':
                 wperc = 0 if white+black == 0 else 100*white/(white+black)
                 bperc = 0 if white+black == 0 else 100-wperc
                 pprint(f"Total Games: {total} | White wins: {white} ({wperc}%) | Black wins: {black} ({bperc}%) | Wins vs Bot: {botwins}")
