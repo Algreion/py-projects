@@ -1,19 +1,15 @@
 
 pprint = print
 from rich import print
-from random import choice
+from random import choice,randint
 import os
 
 #TODO | 1 per day
-# Improved move/capture option render
-# Text colors (winning, losing, etc.)
-# Undo
-# Wider loop logic (Start/Restart game, track wins/losses, start match vs AI (difficulty=logic 1=3,2=1,3=3), load earlier match)
-# Surrender & Tie
 # Add easier moves (e4, Be5, Kd2, Qh4...)
 # Check if everything works properly (try a few games)
 # Add custom pieces (god piece, uncapturable, necromancer, faction swapper, new patterns, etc.)
 # Begin pygame implementation, write todo for it
+# Misc: Undo, improved text colors, in-game admin commands (spawn/del piece, add custom, etc.)
 
 RICH = True # Colors
 BLACK = 'cyan'
@@ -22,6 +18,8 @@ EMPTY = 'bold'
 
 LOGS = True
 SEP = "_______________________________"
+
+ADMIN = False
 
 class Board:
     def __init__(self, N: tuple = (8,8), filled: bool = False, type: str | None = 'Chess'):
@@ -34,8 +32,8 @@ class Board:
         self.gap = 2 # board str
         self.blank = '▢'
         self.white_king = 'e1'
-        self.whitemoved = [False,False,False]
-        self.blackmoved = [False,False,False]
+        self.whitemoved = [True,True,True]
+        self.blackmoved = [True,True,True]
         self.black_king = 'e8'
         self.white_enpassant,self.black_enpassant = None, None
         self.white_captured,self.black_captured = set(),set()
@@ -86,6 +84,20 @@ class Board:
                         if pieces: attacking.append((w,h))
                         else: return True
         return attacking if pieces else False
+    def stalemate(self, color: int = 1) -> bool:
+        """Flag of stalemate. (No legal moves, king not in check.)"""
+        for h in range(self.H):
+            for w in range(self.W):
+                p = self.lookup((w,h)) 
+                if p is not None and p.color == color and self.move_options((w,h),CHECK=True,CASTLING=True)+self.capture_options((w,h),CHECK=True): return False
+        return not self.checkcheck(color)
+    def drawmate(self) -> bool:
+        """Returns whether only kings are left on the board."""
+        for h in range(self.H):
+            for w in range(self.W):
+                p = self.lookup((w,h))
+                if p is not None and p.type != 'king': return False
+        return True
     def checkmate(self, color: int = 1) -> bool:
         """Flag of whether the king is in checkmate."""
         if color == 1: king = self.white_king
@@ -119,6 +131,9 @@ class Board:
         if piece is None: name, color = name if name is not None else 'pawn', color if color is not None else 1
         else: name, color = name if name is not None else piece.type, color if color is not None else piece.color
         self[square] = Piece(name, color, self)
+        if name == 'king':
+            if color == 1: self.white_king = square
+            else: self.black_king = square
     def checkcheck(self, color: int) -> bool:
         """Returns whether king is in check."""
         king = self.white_king if color == 1 else self.black_king
@@ -233,6 +248,8 @@ class Board:
     def setup(self) -> bool:
         """Sets up board with correct pieces."""
         if (self.W,self.H) != (8,8): return False
+        self.whitemoved = [False,False,False]
+        self.blackmoved = [False,False,False]
         def P(type, color): return Piece(type, color, self)
         black_back = ["rook", "knight", "bishop", "queen", "king", "bishop", "knight", "rook"]
         white_back = ["rook", "knight", "bishop", "queen", "king", "bishop", "knight", "rook"]
@@ -408,8 +425,9 @@ class Board:
             elif self.lookup(move).color != color:
                 print("Piece belongs to opponent.")
                 return False
-            print("Move options:",self.convert(self.move_options(move,CHECK=True,CASTLING=True)))
-            print("Capture options:",self.convert(self.capture_options(move,CHECK=True)))
+            A,B = self.convert(self.move_options(move,CHECK=True,CASTLING=True)), self.convert(self.capture_options(move,CHECK=True))
+            print(f"Move options: {A} ({len(A)})")
+            print(f"Capture options: {B} ({len(B)})\n")
             return False
         elif len(move) == 2:
             moveA,moveB = move
@@ -470,12 +488,30 @@ class Board:
             case 'a8': self.blackmoved[0] = True
             case 'h8': self.blackmoved[2] = True
         return whitemoved,blackmoved
-    def turn(self, stats: list) -> bool | list:
+    def turn(self, stats: list, botplay: tuple | None = None) -> bool | list | int:
         """Turn of specified color. Returns whether to continue. Pawn promotions handled here due to input requirement."""
         global RICH,WHITE,BLACK,EMPTY,LOGS
         color, info, swap = stats
         reverse = color if swap else 1
         quitcheck = False
+        asked_draw = False
+        if botplay and botplay[0] == color: 
+            botcolor, botlogic = botplay
+            move = self.ai(botcolor,botlogic)
+            if move is None:
+                pprint("Bot couldn't find a valid move. Quitting...")
+                quit()
+            outcome = self.handle_turn(move,botcolor)
+            if isinstance(outcome,str):
+                match botlogic:
+                    case 1: options = ['queen','bishop','rook','knight'] # Medium
+                    case 2: options = ['queen'] # Hard
+                    case 3: options = ['bishop','knight'] # Easy
+                    case _: options = ['rook'] # Misc
+                promo = choice(options)
+                self.setpiece(outcome, name=promo)
+                if LOGS: print(f"Promoted pawn on {outcome} to a {promo.capitalize()}.")
+            return True
         print('\n'+self.show(reverse,bool(info),bool(RICH)))
         if self.checkcheck(color):
             if LOGS: print("Your king is in check!")
@@ -483,6 +519,7 @@ class Board:
         while True:
             try:
                 if RICH: print(f"{f"[{WHITE}][White][/{WHITE}]" if color==1 else f"[{BLACK}][Black][/{BLACK}]"} ",end='')
+                else: print(f"[{"White" if color==0 else "Black"}]",end='')
                 move = input("> ").lower()
             except:
                 pprint("Quitting...")
@@ -493,9 +530,33 @@ class Board:
 - A B = Moves piece in square to specified. Ex: 1,2 1,4
 - quit | info | save/load (file) | swap | show | logs | points | color (white/black/empty COLOR) | all (moves/captures) | random (1/2/3)""")
                 continue
-            elif move in ['stop','cancel','x','quit']: 
-                print("Quitting game.")
-                return False
+            elif move in ['surrender','resign','giveup','stop','cancel','x','quit']: 
+                print(f"{"White" if color==1 else "Black"} resigns.")
+                return int(not color)
+            elif move in ['draw','tie']:
+                if asked_draw:
+                    print("Already offered a draw this round.\n")
+                    continue
+                print(f"{"White" if color==1 else "Black"} offers a draw.\n")
+                asked_draw = True
+                if botplay: 
+                    print("The bot refused.\n")
+                    continue
+                else:
+                    print(f"{"White" if color==0 else "Black"}, accept (1) or refuse (2) the draw?")
+                    try:
+                        if RICH: print(f"{f"[{WHITE}][White][/{WHITE}]" if color==0 else f"[{BLACK}][Black][/{BLACK}]"} ",end='')
+                        else: print(f"[{"White" if color==0 else "Black"}]",end='')
+                        draw = input("> ").lower()
+                        if draw in ['1','y','yes','accept']:
+                            print(f"{"White" if color==0 else "Black"} accepted the offer.\n")
+                            return -1
+                        else:
+                            print(f"{"White" if color==0 else "Black"} refused.\n")
+                            continue
+                    except:
+                        pprint("Quitting...")
+                        quit()
             elif not move:
                 if quitcheck: return False
                 else:
@@ -599,9 +660,8 @@ class Board:
                 print("Unknown input. Type 'help' for info.")
         return True
     
-    def mainloop(self):
-        """Full match. If reverse is False, only show board in main orientation.
-        Still WIP, need to add checkmates, etc."""
+    def mainloop(self, botplay: tuple | None = None) -> int:
+        """Full match. If reverse is False, only show board in main orientation. Handles checkmate & stalemate. Returns who won, or -1 for tie."""
         color = 1
         info = 1
         swap = 0
@@ -609,14 +669,23 @@ class Board:
             print(SEP)
             print(f"\n{f"[{WHITE}]White[/{WHITE}]" if color==1 else f"[{BLACK}]Black[/{BLACK}]"}'s turn.")
             stats = [color, info, swap]
-            status = self.turn(stats)
+            status = self.turn(stats, botplay=botplay)
             if status is False: break
+            elif type(status)==int:
+                if status == -1: print("The match ends in a draw.")
+                else: print(f"{f"[{WHITE}]White[/{WHITE}]" if status==1 else f"[{BLACK}]Black[/{BLACK}]"} wins!\n")
+                return status
             color = int(not color)
+            if self.stalemate(color) or self.drawmate():
+                print(SEP)
+                self.view(1,info)
+                print(f"{f"[{WHITE}]White[/{WHITE}]" if color==1 else f"[{BLACK}]Black[/{BLACK}]"} is in stalemate![/bold]")
+                return -1
             if self.checkmate(color):
                 print(SEP)
                 self.view(1,info)
                 print(f"\n[bold]Checkmate![/bold] {f"[{WHITE}]White[/{WHITE}]" if color==0 else f"[{BLACK}]Black[/{BLACK}]"} has won.")
-                break
+                return int(not color)
             if isinstance(status,list):
                 for i,s in enumerate(status):
                     if i == 0: color = int(s)
@@ -701,8 +770,106 @@ class Piece:
         C = lambda X: True if override else (self.board.lookup(X) is not None and self.board.lookup(X).color != self.color)
         return enpassant+list(filter(lambda x: 0<=x[0]<self.board.W and 0<=x[1]<self.board.H and C(x),[(x+dx,y+dy) for dx,dy in options]))
 
-if __name__ == '__main__':
-    g = Board(filled=True)
-    print("WIP chess.")
-    g.mainloop()
+def superloop():
+    """Full terminal experience."""
+    global ADMIN # Add options in settings, and in-game
+    HELP = "Options:\n1. Player vs player. | 2. Player vs bot. | 3. Load previous game. | 4. Stats & Settings. | 0. Quit."
+    print("[bold]PyChess[/bold]\n")
+    pprint(HELP)
+    white, black, total, botwins = 0,0,0,0
+    while True:
+        try: choice = input("\n[PyChess] > ").lower()
+        except:
+            pprint("Quitting...")
+            break
+        match choice:
+            case '1' | 'pvp':
+                board = Board(filled=True)
+                result = board.mainloop()
+                if result == 1: white += 1
+                elif result == 0: black += 1
+                else:
+                    white += 1
+                    black += 1
+                total += 1
+            case '2' | 'bot':
+                try: logic = input("Choose difficulty:\n1. Easy | 2. Medium | 3. Hard\n> ")
+                except:
+                    print("Quitting...")
+                    break
+                match logic:
+                    case '1': logic = 3 # No captures
+                    case '2': logic = 1 # Random
+                    case '3': logic = 2 # Captures
+                    case 'q' | 'x':
+                        print("Cancelled")
+                        continue
+                    case _:
+                        print("Invallid difficulty. Defaulting to medium.")
+                        logic = 1
+                color = input("\nChoose your color, or leave blank to pick white:\n1. White | 2. Black | 3. Random\n> ")
+                match color:
+                    case '1' | '': color = 0 # Color of bot
+                    case '2': color = 1
+                    case '3': 
+                        color = randint(0,1)
+                        pprint(f"Randomly assigned to {'White' if color == 0 else 'Black'}.")
+                diff = 'Easy' if logic == 3 else 'Medium' if logic == 2 else 'Hard'
+                board = Board(filled=True)
+                if board.mainloop(botplay=(color,logic)) != color: 
+                    if logic == 3: remark = "You just dashed the bot's hopes and dreams. Perhaps try a harder difficulty for a real challenge?"
+                    elif logic == 1: remark = "You are officially better at chess than random chance. That puts you in the top 50% players... What do you mean that's not how statistics work?"
+                    elif logic == 2: remark = "Good job! You just beat a bot at the level of Magnus Carlsen. You don't believe me? Well, it tried its best, and that's what counts."
+                    print(f"[bold]Congratulations, you won against the Bot on {diff} difficulty![/bold]")
+                    pprint(remark)
+                    if color == 0: white += 1
+                    else: black += 1
+                    botwins += 1
+                else: 
+                    if logic == 3: remark = "That is... impressive, it should be impossible for it to win.\nYour chess skills are below zero, but I'm sure you have other talents!"
+                    elif logic == 1: remark = "Fun fact, this bot plays completely at random. So don't feel bad for losing, there was a nonzero chance it played like a Grandmaster!"
+                    elif logic == 2: remark = "Don't worry, you'll improve with practice. Perhaps try a lower difficulty?"
+                    print(f"You lost against the Bot on {diff} difficulty.")
+                    pprint(remark)
+                    if color == 0: black += 1
+                    else: white += 1
+                total += 1
+            case '3' | 'load':
+                default = 'board.txt'
+                try: file = input(f"Press enter to load '{default}', or input file name: ").lower()
+                except:
+                    print("Quitting...")
+                    break
+                if not file: file = 'board.txt'
+                elif file in ['x','cancel']:
+                    print("Cancelled.")
+                    continue
+                board = Board()
+                if board.load(file): print("Loading game...")
+                else:
+                    print(f"Unable to find '{file}'.")
+                    continue
+                result = board.mainloop()
+                if result == 1: white += 1
+                elif result == 0: black += 1
+                else:
+                    white += 1
+                    black += 1
+                total += 1
+            case '4' | 'stats' | 'settings':
+                wperc = 0 if white+black == 0 else 100*white/(white+black)
+                bperc = 0 if white+black == 0 else 100-wperc
+                pprint(f"Total Games: {total} | White wins: {white} ({wperc}%) | Black wins: {black} ({bperc}%) | Wins vs Bot: {botwins}")
+            case 'admin':
+                ADMIN = not ADMIN
+                print(f"ADMIN toggled {'ON' if ADMIN else 'OFF'}.")
+            case 'help' | 'h':
+                pprint(HELP)
+            case '0' | 'quit' | 'x':
+                pprint("Quitting...")
+                break
+            case _:
+                print("Unknown input. Type 'help'.")
 
+if __name__ == '__main__':
+    superloop()
