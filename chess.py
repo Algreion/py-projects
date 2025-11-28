@@ -29,12 +29,14 @@ class Board:
         self.board = [[None for _ in range(self.W)] for _ in range(self.H)]
         self.symbol_dict = {"king":"♔","queen":"♕","rook":"♖","bishop":"♗","knight":"♘","pawn":"♙"}
         self.simplified_dict = {"king":"k","queen":"q","rook":"r","bishop":"b","knight":"n","pawn":"p",None: '.'}
+        self.simplified_dict_invert = dict([(v,k) for k,v in self.simplified_dict.items()])
         self.gap = 2 # board str
         self.blank = '▢'
         self.whitemoved = [True,True,True]
         self.blackmoved = [True,True,True]
         self.white_king = None
         self.black_king = None
+        self.default = self.implicit
         self.white_enpassant,self.black_enpassant = None, None
         self.white_captured,self.black_captured = set(),set()
         self.move_dict = {
@@ -187,7 +189,7 @@ class Board:
     def load(self, file: str = 'board.txt') -> bool | list:
         try:
             with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),file), 'r') as f:
-                D = dict([(v,k) for k,v in self.simplified_dict.items()])
+                D = self.simplified_dict_invert
                 for y,line in enumerate(f.readlines()):
                     if line.startswith('='): # Castling check
                         self.whitemoved,self.blackmoved = [bool(int(i)) for i in line[1:].split()[0].split(',')],[bool(int(i)) for i in line[1:].split()[1].split(',')]
@@ -268,6 +270,47 @@ class Board:
         self.white_king = None
         self.black_king = None
         self.board = [[None for _ in range(self.W)] for _ in range(self.H)]
+    def implicit(self, move: str, debugging: bool = False) -> str:
+        """Converts explicit (b1 c3) to implicit (Nc3)"""
+        try:
+            if len(move) != 5 or ' ' not in move: return move
+            square1, square2 = move[:2],move[3:]
+            piece = self.lookup((square1))
+            if piece is None:
+                if debugging: print("Square is empty.")
+                return move
+            p = self.simplified_dict[piece.type].upper()
+            return f"{p}{square2}"
+        except: 
+            if debugging: print(f"Conversion of '{move}' to implicit failed.")
+            return move
+    def explicit(self, move: str, debugging: bool = False) -> str | None:
+        """Converts implicit (Nc3) to explicit (b1 c3)"""
+        try:
+            if len(move) != 3: return move
+            move = move.lower()
+            P, square2 = move[0],move[1:]
+            pieces,option = [], self.ind(square2)
+            for h in range(self.H):
+                for w in range(self.W):
+                    p = self.lookup((w,h))
+                    if p is not None and self.simplified_dict_invert[P] == p.type and option in self.move_options((w,h),True,True)+self.capture_options((w,h),CHECK=True):
+                        pieces.append(self.code((w,h)))
+            if len(pieces) == 0:
+                if debugging: print("Move isn't an option.")
+                return None
+            elif len(pieces) == 1:
+                return f"{pieces[0]} {square2}"
+            else:
+                while True:
+                    try: x = input(f"Ambiguous move, applies to pieces on: {pieces}. Specify square: ")
+                    except: pprint("Quitting...") or quit()
+                    if x in pieces: return f"{x} {square2}"
+                    elif x.isdigit() and 0<int(x)<=len(pieces): return f"{pieces[int(x)-1]} {square2}"
+                    print("Invalid choice.")
+        except:
+            if debugging: print(f"Conversion of '{move}' to explicit failed.")
+            return None
     def move(self,square1: str | tuple, square2: str | tuple) -> bool:
         """Move piece to chosen square. Requires square to be empty."""
         (x1,y1),(x2,y2) = self.ind(square1),self.ind(square2)
@@ -426,6 +469,10 @@ class Board:
                 x,y = move.split(',')
                 move = (int(x),int(y))
             if self.lookup(move) is None:
+                test = self.explicit('P'+move)
+                if test != move:
+                    self.handle_turn(test,color)
+                    return True
                 print("Square is empty.")
                 return False
             elif self.lookup(move).color != color:
@@ -530,12 +577,12 @@ class Board:
             except:
                 pprint("Quitting...")
                 quit()
-            if move in ['h','help','format']:
+            if move in ['h','help','format','cmds']:
                 print("""Use chess notation or x,y pairs.
 - A = Shows all available moves from square. Ex: a1
 - A B = Moves piece in square to specified. Ex: a2 a4
 - quit | info | save (file) | swap | show | logs | color (white/black/empty COLOR)\n""")
-                if ADMIN: print("""Admin commands:\nload (file) | reset | all (moves/captures) | random (1-3) | win | forcedraw | set SQUARE PIECE (COLOR) | del SQUARE | debug\n""")
+                if ADMIN: print("""Admin commands:\nload (file) | reset | all (moves/captures) | random (1-3) | debug | default\nwin | forcedraw | set SQUARE PIECE (COLOR) | del SQUARE\n""")
                 continue
             elif move in ['surrender','resign','giveup','stop','cancel','x','quit']: 
                 print(f"{"White" if color==1 else "Black"} resigns.")
@@ -570,6 +617,14 @@ class Board:
                     print("Input nothing again to quit.")
                     quitcheck = True
                 continue
+            elif move in ['def', 'default'] and ADMIN:
+                if self.default == self.implicit:
+                    print("Default move rendering is now explicit. Ex: 'c1 b3'.")
+                    self.default = self.explicit
+                elif self.default == self.explicit:
+                    print("Default move rendering is now implicit. Ex: 'Nc3'.")
+                    self.default = self.implicit
+                continue
             elif move in ['show','view']:
                 print('\n'+self.show(reverse,bool(info),bool(RICH)))
                 continue
@@ -598,11 +653,19 @@ class Board:
                 return [color, info, int(not swap)]
             elif move.split()[0] == 'all' and ADMIN:
                 move = move.split()
-                if len(move) == 1: 
+                if len(move) == 1:
                     pool = self.all_moves(color)
-                    print(f"All available moves:\n{pool[0]}\nAll available captures:\n{pool[1]}")
-                elif move[1] in ['c','captures']: print(f"All available captures:\n{self.all_moves(color,capturesOnly=True)[1]}")
-                elif move[1] in ['m','moves']: print(f"All available moves (excluding captures):\n{self.all_moves(color,movesOnly=True)[0]}")
+                    pool1, pool2 = pool
+                    if self.default == self.implicit: pool1, pool2 = [self.implicit(i) for i in pool1],[self.implicit(i) for i in pool2]
+                    print(f"All available moves:\n{pool1}\nAll available captures:\n{pool2}")
+                elif move[1] in ['c','captures']:
+                    pool = self.all_moves(color,capturesOnly=True)[1]
+                    if self.default == self.implicit: pool = [self.implicit(i) for i in pool]
+                    print(f"All available captures:\n{pool}")
+                elif move[1] in ['m','moves']: 
+                    pool = self.all_moves(color,movesOnly=True)[0]
+                    if self.default == self.implicit: pool = [self.implicit(i) for i in pool]
+                    print(f"All available moves (excluding captures):\n{pool}")
                 else: print("Invalid input. Options are 'all', 'all moves' or 'all captures'.")
                 continue
             elif move.split()[0] in ['rand','random','r'] and ADMIN:
@@ -654,6 +717,8 @@ class Board:
                         case 'set':
                             square, name = move[1],move[2]
                             col = color if len(move) == 3 else move[3]
+                            if col in ['w','white']: col = 1
+                            elif col in ['b','black']: col = 0
                             self.setpiece(square,name,col)
                             print(f"Set piece on {square} to {"White" if col==1 else "Black"} {name.capitalize()}.")
                             print("\n")
@@ -676,6 +741,10 @@ class Board:
                     print("Invalid command usage. Type 'help' for info.")
                 continue
             try:
+                move = self.explicit(move)
+                if move is None:
+                    print("Illegal move.\n")
+                    continue
                 outcome = self.handle_turn(move=move,color=color)
                 if isinstance(outcome,str): # Pawn promotion
                     print("\n")
@@ -814,6 +883,7 @@ def superloop():
     print("[bold]PyChess[/bold]\n")
     pprint(HELP)
     white, black, total, botwins = 0,0,0,0
+    quitcheck = False
     while True:
         try: choice = input("\n[PyChess] > ").lower()
         except:
@@ -905,6 +975,10 @@ def superloop():
             case '0' | 'quit' | 'x':
                 pprint("Quitting...")
                 break
+            case '':
+                if quitcheck: break
+                print("Input nothing again to quit.")
+                quitcheck = True
             case _:
                 print("Unknown input. Type 'help'.")
 
