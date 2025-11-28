@@ -5,7 +5,6 @@ from random import choice,randint
 import os
 
 #TODO | 1 per day
-# Simpler moves (Be4, Ka1, Pd5)
 # Check if everything works properly (try a few games)
 # Add custom pieces (god piece, uncapturable, necromancer, faction swapper, new patterns, etc.)
 # Begin pygame implementation, write todo for it
@@ -20,6 +19,7 @@ LOGS = True
 SEP = "_______________________________"
 
 ADMIN = True
+DEBUGGING = False
 
 class Board:
     def __init__(self, N: tuple = (8,8), filled: bool = False, type: str | None = 'Chess'):
@@ -208,7 +208,9 @@ class Board:
                             if P == 'king' and color == 1: self.white_king = self.code((x,y))
                             elif P == 'king' and color == 0: self.black_king = self.code((x,y))
             return True
-        except: return False
+        except Exception as e: 
+            if DEBUGGING: print(f"[Debug] Error: {e}")
+            return False
     def show(self, color: int = 1, info: bool = True, RICH: bool = True) -> str:
         """Returns string of board with correct orientation."""
         LETTERS = "".join([chr(97+i) for i in range(self.W)])
@@ -270,21 +272,21 @@ class Board:
         self.white_king = None
         self.black_king = None
         self.board = [[None for _ in range(self.W)] for _ in range(self.H)]
-    def implicit(self, move: str, debugging: bool = False) -> str:
+    def implicit(self, move: str) -> str:
         """Converts explicit (b1 c3) to implicit (Nc3)"""
         try:
             if len(move) != 5 or ' ' not in move: return move
             square1, square2 = move[:2],move[3:]
             piece = self.lookup((square1))
             if piece is None:
-                if debugging: print("Square is empty.")
+                if DEBUGGING: print(f"[Debug] Conversion of '{move}' to implicit failed. Square is empty.")
                 return move
             p = self.simplified_dict[piece.type].upper()
             return f"{p}{square2}"
-        except: 
-            if debugging: print(f"Conversion of '{move}' to implicit failed.")
+        except Exception as e: 
+            if DEBUGGING: print(f"[Debug] Conversion of '{move}' to implicit failed. Error: {e}")
             return move
-    def explicit(self, move: str, debugging: bool = False) -> str | None:
+    def explicit(self, move: str, color: int | None = None, debugging: bool = False) -> str | None:
         """Converts implicit (Nc3) to explicit (b1 c3)"""
         try:
             if len(move) != 3: return move
@@ -295,7 +297,7 @@ class Board:
                 for w in range(self.W):
                     p = self.lookup((w,h))
                     if p is not None and self.simplified_dict_invert[P] == p.type and option in self.move_options((w,h),True,True)+self.capture_options((w,h),CHECK=True):
-                        pieces.append(self.code((w,h)))
+                        if color is None or p.color==color: pieces.append(self.code((w,h)))
             if len(pieces) == 0:
                 if debugging: print("Move isn't an option.")
                 return None
@@ -308,8 +310,8 @@ class Board:
                     if x in pieces: return f"{x} {square2}"
                     elif x.isdigit() and 0<int(x)<=len(pieces): return f"{pieces[int(x)-1]} {square2}"
                     print("Invalid choice.")
-        except:
-            if debugging: print(f"Conversion of '{move}' to explicit failed.")
+        except Exception as e:
+            if debugging: print(f"[Debug] Conversion of '{move}' to explicit failed. Error: {e}")
             return None
     def move(self,square1: str | tuple, square2: str | tuple) -> bool:
         """Move piece to chosen square. Requires square to be empty."""
@@ -348,7 +350,7 @@ class Board:
         piece = self.lookup((x,y))
         if piece is None: return []
         moves = piece.move((x,y))
-        if piece.type == 'king': 
+        if piece.type == 'king':
             moves = list(filter(lambda X: self.check_king_move((x,y),X),moves))
             if CASTLING and self.castle(piece.color,long=False,commit=False): moves += ['castle']
             if CASTLING and self.castle(piece.color,long=True,commit=False): moves += ['longcastle']
@@ -423,7 +425,7 @@ class Board:
         moves = []
         captures = []
         for p in pieces:
-            if not capturesOnly: moves += [f"{self.code(p)} {self.code(move)}" for move in self.move_options(p,CHECK=True,CASTLING=True)]
+            if not capturesOnly: moves += [f"{self.code(p)} {self.code(move)}" if move not in ['castle','longcastle'] else move for move in self.move_options(p,CHECK=True,CASTLING=True)]
             if not movesOnly: captures += [f"{self.code(p)} {self.code(move)}" for move in self.capture_options(p,CHECK=True)]
         return moves,captures
     def ai(self, color: int, logic: int = 1) -> str | None:
@@ -469,8 +471,8 @@ class Board:
                 x,y = move.split(',')
                 move = (int(x),int(y))
             if self.lookup(move) is None:
-                test = self.explicit('P'+move)
-                if test != move:
+                test = self.explicit('P'+move,color)
+                if test != move and test is not None:
                     self.handle_turn(test,color)
                     return True
                 print("Square is empty.")
@@ -578,10 +580,10 @@ class Board:
                 pprint("Quitting...")
                 quit()
             if move in ['h','help','format','cmds']:
-                print("""Use chess notation or x,y pairs.
+                print("""Use chess notation (eg. Nc3, e4, Qh7, Ph7...) or square notation:
 - A = Shows all available moves from square. Ex: a1
 - A B = Moves piece in square to specified. Ex: a2 a4
-- quit | info | save (file) | swap | show | logs | color (white/black/empty COLOR)\n""")
+Chess commands: castle | draw | surrender || Commands: info | save (file) | swap | show | logs | color (white/black/empty COLOR)\n""")
                 if ADMIN: print("""Admin commands:\nload (file) | reset | all (moves/captures) | random (1-3) | debug | default\nwin | forcedraw | set SQUARE PIECE (COLOR) | del SQUARE\n""")
                 continue
             elif move in ['surrender','resign','giveup','stop','cancel','x','quit']: 
@@ -630,7 +632,7 @@ class Board:
                 continue
             elif move.split()[0] in ['save','export']:
                 file = 'board.txt' if len(move.split())==1 else move.split()[1]
-                if self.save(file,stats): print(f"Board saved to '{file}' successfully.")
+                if self.save(file,stats): print(f"Board saved to '{file}' successfully.\n")
                 else: print("Error. Unable to save the board.")
                 continue
             elif move.split()[0] in ['load','import'] and ADMIN:
@@ -737,11 +739,12 @@ class Board:
                             print("\n")
                             self.view()
                         case 'debug': print(f"whitemoved: {self.whitemoved} | blackmoved: {self.blackmoved} (a8,e8,h8)\nWhite King: {self.white_king} | Black King: {self.black_king}\nCaptured white: [{','.join(str(p) for p in self.white_captured)}] | Captured black: [{','.join(str(p) for p in self.black_captured)}]\nWhite enpassant: {self.white_enpassant} | Black enpassant: {self.black_enpassant}\nWhite eval: {self.advantage()} | Color={color}, Info={info}, Swap={swap}, Bot={botplay}\n")
-                except:
+                except Exception as e:
                     print("Invalid command usage. Type 'help' for info.")
+                    if DEBUGGING: print(f"[Debug] Error: {e}")
                 continue
             try:
-                move = self.explicit(move)
+                move = self.explicit(move,color)
                 if move is None:
                     print("Illegal move.\n")
                     continue
@@ -762,8 +765,9 @@ class Board:
                     if LOGS: print(f"Promoted pawn on {outcome} to a {promo.capitalize()}.")
                 if outcome: break
                 else: continue
-            except:
+            except Exception as e:
                 print("Unknown input. Type 'help' for info.")
+                if DEBUGGING: print(f"[Admin Log]: Error | {e}\n")
         return True
     
     def mainloop(self, botplay: tuple | None = None) -> int:
@@ -878,9 +882,9 @@ class Piece:
 
 def superloop():
     """Full terminal experience."""
-    global ADMIN # Add options in settings, and in-game
-    HELP = "Options:\n1. Player vs player. | 2. Player vs bot. | 3. Load previous game. | 4. Stats. | 0. Quit."
-    print("[bold]PyChess[/bold]\n")
+    global ADMIN,DEBUG
+    HELP = "Options:\n1. Player vs player. | 2. Player vs bot. | 3. Load previous game. | 4. Stats. | 0. Quit. || Cmds: 'admin', 'debug'"
+    print("[bold underline]PyChess[/bold underline]\n")
     pprint(HELP)
     white, black, total, botwins = 0,0,0,0
     quitcheck = False
@@ -921,7 +925,7 @@ def superloop():
                     case '3': 
                         color = randint(0,1)
                         pprint(f"Randomly assigned to {'White' if color == 0 else 'Black'}.")
-                diff = 'Easy' if logic == 3 else 'Medium' if logic == 2 else 'Hard'
+                diff = 'Easy' if logic == 3 else 'Medium' if logic == 1 else 'Hard'
                 board = Board(filled=True)
                 if board.mainloop(botplay=(color,logic)) != color: 
                     if logic == 3: remark = "You just dashed the bot's hopes and dreams. Perhaps try a harder difficulty for a real challenge?"
@@ -970,6 +974,9 @@ def superloop():
             case 'admin':
                 ADMIN = not ADMIN
                 print(f"ADMIN toggled {'ON' if ADMIN else 'OFF'}.")
+            case 'debug':
+                DEBUG = not DEBUG
+                print(f"DEBUG toggled {'ON' if DEBUG else 'OFF'}.")
             case 'help' | 'h':
                 pprint(HELP)
             case '0' | 'quit' | 'x':
