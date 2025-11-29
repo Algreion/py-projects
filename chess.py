@@ -1051,33 +1051,38 @@ def pyloop():
     running = True
     highlighted = None
     dragging = False
+    lastselect = (-1,-1)
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pprint("Quitting...")
                 pygame.quit()
                 running = False
-            elif event.type == pygame.MOUSEBUTTONDOWN:
+            elif event.type == pygame.MOUSEBUTTONDOWN and pygame.mouse.get_pressed()[0]: # Left click
+                if dragging: dragging = False
+                dragging = True
                 pos = pygame.mouse.get_pos()
                 square = board.getsquare(pos)
                 board.draw()
                 if square is not None:
-                    if square == highlighted:
-                        highlighted = None
-                    else:
-                        if highlighted is not None: board.drawsquare(square, highlight=highlighted)
-                        highlighted = square
-                        board.drawsquare(square,highlight=True)
+                    if square == highlighted: lastselect = square
+                    if highlighted is not None: board.drawsquare(square, highlight=highlighted)
+                    highlighted = square
+                    board.drawsquare(square,highlight=True)
                 pygame.display.update()
-            elif event.type == pygame.MOUSEBUTTONUP and dragging:
-                dragging = False
-                board.draw()
-                if highlighted is not None: board.drawsquare(location=highlighted,highlight=True)
-                pygame.display.update()
-            elif pygame.mouse.get_pressed()[0] and highlighted is not None and board[highlighted] is not None:
-                if not dragging:
-                    dragging = True
-                    board.drawsquare(square,highlight=True,piece=False)
+            elif event.type == pygame.MOUSEBUTTONUP:
+                pos = pygame.mouse.get_pos()
+                if lastselect == board.getsquare(pos):
+                    lastselect = (-1,-1)
+                    highlighted = None
+                    board.draw(update=True)
+                if dragging:
+                    dragging = False
+                    board.draw()
+                    if highlighted is not None:
+                        pos = board.drawsquare(location=highlighted,highlight=True)
+                    pygame.display.update()
+            elif pygame.mouse.get_pressed()[0] and highlighted is not None and board[highlighted] is not None and dragging:
                 pos = pygame.mouse.get_pos()
                 board.draw()
                 board.drawsquare(square,highlight=True,piece=False)
