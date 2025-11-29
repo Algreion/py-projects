@@ -991,8 +991,15 @@ GAPX,GAPY = 10, 10
 BG = (45, 34, 24)
 LIGHT = (240, 217, 181)
 DARK = (181, 136, 99)
+BORDER = True
+SQUAREBORDER_COLOR = (45, 34, 24)
+SQUAREBORDER_WIDTH = 1
 BLACKPIECE = (0,0,0)
 WHITEPIECE = (255,255,255)
+MOVEOPTION = (255,0,0)
+MOVEOPTION_BORDER = 0
+HIGHLIGHT = (0,255,0)
+HIGHLIGHT_BORDER = 0
 
 WIDTH -= (WIDTH-2*GAPX)%8
 HEIGHT -= (HEIGHT-2*GAPY)%8
@@ -1004,35 +1011,80 @@ class PyBoard(Board):
         self.win = win
         self.w, self.h = BOARDW//8,BOARDH//8
         self.piecefont = pygame.font.Font("C:/Windows/Fonts/seguisym.ttf", min(self.w,self.h))
-    def draw(self): # Still need to add info (letters/numbers)
+    def draw(self, update: bool = False): # Still need to add info (letters/numbers)
         """Renders the full board."""
         self.win.fill(BG)
         for h in range(8):
             for w in range(8):
-                col = DARK if (w+h)%2 else LIGHT
-                coord = (GAPX+w*self.w,GAPY+h*self.h)
-                pygame.draw.rect(self.win,col,(coord[0],coord[1],self.w,self.h))
-                p = self[(w,h)]
-                if p is not None: 
-                    p = self.piecefont.render(p.symbol, True, WHITEPIECE if p.color else BLACKPIECE)
-                    center = p.get_rect(center=(coord[0]+self.w//2,coord[1]+self.h//2))
-                    self.win.blit(p,center)
+                self.drawsquare((w,h))
+        if update: pygame.display.update()
+    def drawsquare(self, location: tuple, highlight: bool = False, moveoption: bool = False, piece: bool = True):
+        """Draws a single square. Location is (x,y)."""
+        w,h = location
+        col = DARK if (w+h)%2 else LIGHT
+        coord = (GAPX+w*self.w,GAPY+BOARDH-(1+h)*self.h)
+        pygame.draw.rect(self.win,col,(coord[0],coord[1],self.w,self.h))
+        if BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
+        if moveoption:
+            pygame.draw.rect(self.win,MOVEOPTION,(coord[0],coord[1],self.w,self.h),MOVEOPTION_BORDER)
+            if MOVEOPTION_BORDER == 0 and BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
+        if highlight:
+            pygame.draw.rect(self.win,HIGHLIGHT,(coord[0],coord[1],self.w,self.h),HIGHLIGHT_BORDER)
+            if HIGHLIGHT_BORDER == 0 and BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
+        p = self[(w,h)]
+        if p is not None and piece:
+            p = self.piecefont.render(p.symbol, True, WHITEPIECE if p.color else BLACKPIECE)
+            center = p.get_rect(center=(coord[0]+self.w//2,coord[1]+self.h//2))
+            self.win.blit(p,center)
+    def getsquare(self, pos: tuple) -> tuple | None:
+        """Returns the square index from the mouse position, or None."""
+        X,Y = pos
+        x,y = (X-GAPX)//self.w, -1-((Y-GAPY-BOARDH)//self.h)
+        return (x,y) if 0<=x<8 and 0<=y<8 else None
 
 def pyloop():
     window = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("PyChess")
     board = PyBoard(window, True)
-    board.draw()
-    pygame.display.update()
+    board.draw(update=True)
     running = True
-
+    highlighted = None
+    dragging = False
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pprint("Quitting...")
                 pygame.quit()
                 running = False
-
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                pos = pygame.mouse.get_pos()
+                square = board.getsquare(pos)
+                if square is not None: 
+                    if square == highlighted:
+                        board.drawsquare(square)
+                        highlighted = None
+                    else:
+                        if highlighted is not None: board.drawsquare(square, highlight=highlighted)
+                        highlighted = square
+                        board.drawsquare(square,highlight=True)
+                pygame.display.update()
+            elif event.type == pygame.MOUSEBUTTONUP and dragging:
+                dragging = False
+                board.draw()
+                board.drawsquare(location=highlighted,highlight=True)
+                pygame.display.update()
+            elif pygame.mouse.get_pressed()[0] and highlighted is not None and board[highlighted] is not None:
+                if not dragging:
+                    dragging = True
+                    board.drawsquare(square,highlight=True,piece=False)
+                pos = pygame.mouse.get_pos()
+                board.draw()
+                board.drawsquare(square,highlight=True,piece=False)
+                p = board[highlighted]
+                p = board.piecefont.render(p.symbol, True, WHITEPIECE if p.color else BLACKPIECE)
+                center = p.get_rect(center=(pos[0],pos[1]))
+                board.win.blit(p,center)
+                pygame.display.update()
 if __name__ == '__main__':
     # superloop()
     pyloop()
