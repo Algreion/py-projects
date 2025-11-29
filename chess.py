@@ -1011,6 +1011,7 @@ class PyBoard(Board):
         self.win = win
         self.w, self.h = BOARDW//8,BOARDH//8
         self.piecefont = pygame.font.Font("C:/Windows/Fonts/seguisym.ttf", min(self.w,self.h))
+        self.swapped = False
     def draw(self, update: bool = False): # Still need to add info (letters/numbers)
         """Renders the full board."""
         self.win.fill(BG)
@@ -1022,7 +1023,7 @@ class PyBoard(Board):
         """Draws a single square. Location is (x,y)."""
         w,h = location
         col = DARK if (w+h)%2 else LIGHT
-        coord = (GAPX+w*self.w,GAPY+BOARDH-(1+h)*self.h)
+        coord = (GAPX+w*self.w,GAPY+h*self.h if self.swapped else GAPY+BOARDH-(1+h)*self.h)
         pygame.draw.rect(self.win,col,(coord[0],coord[1],self.w,self.h))
         if BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
         if moveoption:
@@ -1039,7 +1040,7 @@ class PyBoard(Board):
     def getsquare(self, pos: tuple) -> tuple | None:
         """Returns the square index from the mouse position, or None."""
         X,Y = pos
-        x,y = (X-GAPX)//self.w, -1-((Y-GAPY-BOARDH)//self.h)
+        x,y = (X-GAPX)//self.w, (Y-GAPY)//self.h if self.swapped else -1-((Y-GAPY-BOARDH)//self.h)
         return (x,y) if 0<=x<8 and 0<=y<8 else None
 
 def pyloop():
@@ -1059,9 +1060,9 @@ def pyloop():
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 pos = pygame.mouse.get_pos()
                 square = board.getsquare(pos)
-                if square is not None: 
+                board.draw()
+                if square is not None:
                     if square == highlighted:
-                        board.drawsquare(square)
                         highlighted = None
                     else:
                         if highlighted is not None: board.drawsquare(square, highlight=highlighted)
@@ -1071,7 +1072,7 @@ def pyloop():
             elif event.type == pygame.MOUSEBUTTONUP and dragging:
                 dragging = False
                 board.draw()
-                board.drawsquare(location=highlighted,highlight=True)
+                if highlighted is not None: board.drawsquare(location=highlighted,highlight=True)
                 pygame.display.update()
             elif pygame.mouse.get_pressed()[0] and highlighted is not None and board[highlighted] is not None:
                 if not dragging:
