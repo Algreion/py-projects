@@ -2,13 +2,7 @@
 pprint = print
 from rich import print
 from random import choice,randint
-import os
-
-#TODO | 1 per day
-# Check if everything works properly (try a few games)
-# Add custom pieces (god piece, uncapturable, necromancer, faction swapper, new patterns, etc.)
-# Begin pygame implementation, write todo for it
-# Misc: Undo, improved text colors
+import os,pygame
 
 RICH = True # Colors
 BLACK = 'cyan'
@@ -989,5 +983,56 @@ def superloop():
             case _:
                 print("Unknown input. Type 'help'.")
 
+# ____________________________________________________________________________________________________________________________
+pygame.font.init()
+
+WIDTH, HEIGHT = 800,800
+GAPX,GAPY = 10, 10
+BG = (45, 34, 24)
+LIGHT = (240, 217, 181)
+DARK = (181, 136, 99)
+BLACKPIECE = (0,0,0)
+WHITEPIECE = (255,255,255)
+
+WIDTH -= (WIDTH-2*GAPX)%8
+HEIGHT -= (HEIGHT-2*GAPY)%8
+BOARDW,BOARDH = WIDTH-2*GAPX,HEIGHT-2*GAPY
+
+class PyBoard(Board):
+    def __init__(self, win, filled: bool = False):
+        super().__init__(filled=filled)
+        self.win = win
+        self.w, self.h = BOARDW//8,BOARDH//8
+        self.piecefont = pygame.font.Font("C:/Windows/Fonts/seguisym.ttf", min(self.w,self.h))
+    def draw(self): # Still need to add info (letters/numbers)
+        """Renders the full board."""
+        self.win.fill(BG)
+        for h in range(8):
+            for w in range(8):
+                col = DARK if (w+h)%2 else LIGHT
+                coord = (GAPX+w*self.w,GAPY+h*self.h)
+                pygame.draw.rect(self.win,col,(coord[0],coord[1],self.w,self.h))
+                p = self[(w,h)]
+                if p is not None: 
+                    p = self.piecefont.render(p.symbol, True, WHITEPIECE if p.color else BLACKPIECE)
+                    center = p.get_rect(center=(coord[0]+self.w//2,coord[1]+self.h//2))
+                    self.win.blit(p,center)
+
+def pyloop():
+    window = pygame.display.set_mode((WIDTH, HEIGHT))
+    pygame.display.set_caption("PyChess")
+    board = PyBoard(window, True)
+    board.draw()
+    pygame.display.update()
+    running = True
+
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pprint("Quitting...")
+                pygame.quit()
+                running = False
+
 if __name__ == '__main__':
-    superloop()
+    # superloop()
+    pyloop()
