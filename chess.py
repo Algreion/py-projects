@@ -996,10 +996,14 @@ SQUAREBORDER_COLOR = (45, 34, 24)
 SQUAREBORDER_WIDTH = 1
 BLACKPIECE = (0,0,0)
 WHITEPIECE = (255,255,255)
-MOVEOPTION = (255,0,0)
+MOVEOPTION = (255,100,100)
 MOVEOPTION_BORDER = 0
+CAPTUREOPTION = (255,0,0)
+CAPTUREOPTION_BORDER = 0
 HIGHLIGHT = (0,255,0)
 HIGHLIGHT_BORDER = 0
+HIGHLIGHT2 = (100,255,100)
+HIGHLIGHT2_BORDER = 0
 
 WIDTH -= (WIDTH-2*GAPX)%8
 HEIGHT -= (HEIGHT-2*GAPY)%8
@@ -1019,7 +1023,7 @@ class PyBoard(Board):
             for w in range(8):
                 self.drawsquare((w,h))
         if update: pygame.display.update()
-    def drawsquare(self, location: tuple, highlight: bool = False, moveoption: bool = False, piece: bool = True):
+    def drawsquare(self, location: tuple, highlight: bool = False, moveoption: bool = False, piece: bool = True, hl2: bool = False, captureoption: bool = False):
         """Draws a single square. Location is (x,y)."""
         w,h = location
         col = DARK if (w+h)%2 else LIGHT
@@ -1029,14 +1033,40 @@ class PyBoard(Board):
         if moveoption:
             pygame.draw.rect(self.win,MOVEOPTION,(coord[0],coord[1],self.w,self.h),MOVEOPTION_BORDER)
             if MOVEOPTION_BORDER == 0 and BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
+        if captureoption:
+            pygame.draw.rect(self.win,CAPTUREOPTION,(coord[0],coord[1],self.w,self.h),CAPTUREOPTION_BORDER)
+            if CAPTUREOPTION_BORDER == 0 and BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
         if highlight:
             pygame.draw.rect(self.win,HIGHLIGHT,(coord[0],coord[1],self.w,self.h),HIGHLIGHT_BORDER)
             if HIGHLIGHT_BORDER == 0 and BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
+        if hl2:
+            pygame.draw.rect(self.win,HIGHLIGHT2,(coord[0],coord[1],self.w,self.h),HIGHLIGHT2_BORDER)
+            if HIGHLIGHT2_BORDER == 0 and BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
         p = self[(w,h)]
         if p is not None and piece:
             p = self.piecefont.render(p.symbol, True, WHITEPIECE if p.color else BLACKPIECE)
             center = p.get_rect(center=(coord[0]+self.w//2,coord[1]+self.h//2))
             self.win.blit(p,center)
+    def drawoptions(self, square: tuple, options: list, captureoptions: list) -> None:
+        p = self.lookup(square)
+        if p is None or options is None: return []
+        triggers = []
+        c,lc = None,None
+        if 'castle' in options:
+            c = (6,0) if p.color == 1 else (6,7)
+            self.drawsquare(c,moveoption=True)
+        if 'longcastle' in options:
+            lc = (1,0) if p.color == 1 else (1,7)
+            self.drawsquare(lc,moveoption=True)
+        if c is not None: triggers.append(c)
+        if lc is not None: triggers.append(lc)
+        for o in options:
+            if type(o) == tuple:
+                triggers.append(o)
+                self.drawsquare(o,moveoption=True)
+        for o in captureoptions:
+            self.drawsquare(o,captureoption=True)
+        return triggers+captureoptions
     def getsquare(self, pos: tuple) -> tuple | None:
         """Returns the square index from the mouse position, or None."""
         X,Y = pos
@@ -1047,50 +1077,79 @@ def pyloop():
     window = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("PyChess")
     board = PyBoard(window, True)
-    board.draw(update=True)
     running = True
-    highlighted = None
-    dragging = False
-    lastselect = (-1,-1)
+    color = 1
+    MOVE = None
     while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pprint("Quitting...")
-                pygame.quit()
-                running = False
-            elif event.type == pygame.MOUSEBUTTONDOWN and pygame.mouse.get_pressed()[0]: # Left click
-                if dragging: dragging = False
-                dragging = True
-                pos = pygame.mouse.get_pos()
-                square = board.getsquare(pos)
-                board.draw()
-                if square is not None:
-                    if square == highlighted: lastselect = square
-                    if highlighted is not None: board.drawsquare(square, highlight=highlighted)
-                    highlighted = square
-                    board.drawsquare(square,highlight=True)
-                pygame.display.update()
-            elif event.type == pygame.MOUSEBUTTONUP:
-                pos = pygame.mouse.get_pos()
-                if lastselect == board.getsquare(pos):
-                    lastselect = (-1,-1)
-                    highlighted = None
-                    board.draw(update=True)
-                if dragging:
-                    dragging = False
+        turn = True
+        highlighted = None
+        dragging = False
+        lastselect = (-1,-1)
+        options = []
+        captureoptions = []
+        optionsTriggers = []
+        board.draw(update=True)
+        while turn:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pprint("Quitting...")
+                    pygame.quit()
+                    turn, running = False, False
+                elif event.type == pygame.MOUSEBUTTONDOWN and pygame.mouse.get_pressed()[0]: # Left click
+                    dragging = True
+                    pos = pygame.mouse.get_pos()
+                    square = board.getsquare(pos)
                     board.draw()
-                    if highlighted is not None:
-                        pos = board.drawsquare(location=highlighted,highlight=True)
+                    if square is not None:
+                        if square == highlighted: lastselect = square
+                        if highlighted is not None: board.drawsquare(square, highlight=highlighted)
+                        highlighted = square
+                        board.drawsquare(square,highlight=True)
+                        p = board.lookup(square)
+                        if p is not None and p.color == color: 
+                            options = board.move_options(square,CHECK=True,CASTLING=True)
+                            captureoptions = board.capture_options(square,CHECK=True)
+                        optionsTriggers = board.drawoptions(square,options, captureoptions)
                     pygame.display.update()
-            elif pygame.mouse.get_pressed()[0] and highlighted is not None and board[highlighted] is not None and dragging:
-                pos = pygame.mouse.get_pos()
-                board.draw()
-                board.drawsquare(square,highlight=True,piece=False)
-                p = board[highlighted]
-                p = board.piecefont.render(p.symbol, True, WHITEPIECE if p.color else BLACKPIECE)
-                center = p.get_rect(center=(pos[0],pos[1]))
-                board.win.blit(p,center)
-                pygame.display.update()
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    pos = pygame.mouse.get_pos()
+                    square = board.getsquare(pos)
+                    if lastselect == square:
+                        lastselect = (-1,-1)
+                        highlighted = None
+                        options = []
+                        board.draw(update=True)
+                    if dragging:
+                        dragging = False
+                        if square in optionsTriggers: # Handleturn
+                            turn = False
+                            if 'castle' in options and square in [(6,0),(6,7)]: MOVE = 'castle'
+                            elif 'longcastle' in options and square in [(1,0),(1,7)]: MOVE = 'longcastle'
+                            else: MOVE = f"{board.code(highlighted)} {board.code(square)}"
+                            break
+                        board.draw()
+                        if highlighted is not None:
+                            pos = board.drawsquare(location=highlighted,highlight=True)
+                        if options:
+                            for o in options: board.drawsquare(o,moveoption=True)
+                        pygame.display.update()
+                elif pygame.mouse.get_pressed()[0] and highlighted is not None and board[highlighted] is not None and dragging:
+                    pos = pygame.mouse.get_pos()
+                    board.draw()
+                    board.drawsquare(square,highlight=True,piece=False)
+                    board.drawoptions(square,options,captureoptions)
+                    board.drawsquare(board.getsquare(pos),hl2=True)
+                    p = board[highlighted]
+                    p = board.piecefont.render(p.symbol, True, WHITEPIECE if p.color else BLACKPIECE)
+                    center = p.get_rect(center=(pos[0],pos[1]))
+                    board.win.blit(p,center)
+                    pygame.display.update()
+        if not running: break
+        board.handle_turn(MOVE, color)
+        color = int(not color)
+
+#TODO: Promotions, check/checkmate, admin options (move opponent pieces, set up board), initial screen, turn indicator, timer, custom pieces...
+
 if __name__ == '__main__':
     # superloop()
     pyloop()
