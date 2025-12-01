@@ -496,7 +496,7 @@ class Board:
             if self.ind(moveB) in opt:
                 self.move(moveA,moveB)
                 self.whitemoved,self.blackmoved = self.helper_moved(moveA,self.whitemoved,self.blackmoved)
-                if LOGS: print(f"{self.lookup(moveB).type.capitalize()} moved to {self.code(moveB)}.")
+                if LOGS: print(f"{"White" if color == 1 else "Black"} {self.lookup(moveB).type.capitalize()} moved to {self.code(moveB)}.")
                 if self.lookup(moveB).type == 'pawn' and abs(self.ind(moveB)[1]-self.ind(moveA)[1]) == 2:
                     x,y = self.ind(moveB)
                     if color == 1: self.white_enpassant = self.ind((x,y-1))
@@ -514,7 +514,7 @@ class Board:
                     capt = self.lookup((x,y)).type.capitalize()
                     self.capture(moveA, (x,y))
                     self.move((x,y),moveB)
-                    if LOGS: print(f"{self.lookup(moveB).type.capitalize()} captured {capt} on {self.code(moveB)}. (En passant)")
+                    if LOGS: print(f"{"White" if color == 1 else "Black"} {self.lookup(moveB).type.capitalize()} captured {capt} on {self.code(moveB)}. (En passant)")
                 else:
                     capt = self.lookup(moveB).type.capitalize()
                     self.capture(moveA, moveB)
@@ -1004,6 +1004,9 @@ HIGHLIGHT = (0,255,0)
 HIGHLIGHT_BORDER = 0
 HIGHLIGHT2 = (100,255,100)
 HIGHLIGHT2_BORDER = 0
+INFO = True
+INFODARK = LIGHT
+INFOLIGHT = DARK
 
 WIDTH -= (WIDTH-2*GAPX)%8
 HEIGHT -= (HEIGHT-2*GAPY)%8
@@ -1015,6 +1018,7 @@ class PyBoard(Board):
         self.win = win
         self.w, self.h = BOARDW//8,BOARDH//8
         self.piecefont = pygame.font.Font("C:/Windows/Fonts/seguisym.ttf", min(self.w,self.h))
+        self.infofont = pygame.sysfont.SysFont("arial",min(self.w,self.h)//5)
         self.swapped = False
     def draw(self, update: bool = False): # Still need to add info (letters/numbers)
         """Renders the full board."""
@@ -1023,6 +1027,9 @@ class PyBoard(Board):
             for w in range(8):
                 self.drawsquare((w,h))
         if update: pygame.display.update()
+    def drawmenu(self):
+        """Renders the initial menu."""
+
     def drawsquare(self, location: tuple, highlight: bool = False, moveoption: bool = False, piece: bool = True, hl2: bool = False, captureoption: bool = False):
         """Draws a single square. Location is (x,y)."""
         w,h = location
@@ -1045,8 +1052,21 @@ class PyBoard(Board):
         p = self[(w,h)]
         if p is not None and piece:
             p = self.piecefont.render(p.symbol, True, WHITEPIECE if p.color else BLACKPIECE)
-            center = p.get_rect(center=(coord[0]+self.w//2,coord[1]+self.h//2))
+            center = p.get_rect(center=(coord[0]+self.w//2,coord[1]+self.h//2-SQUAREBORDER_WIDTH))
             self.win.blit(p,center)
+        if w == 0 and INFO:
+            nums = '12345678'
+            if self.swapped: nums = nums[::-1]
+            i = self.infofont.render(nums[h], True, INFODARK if col == DARK else INFOLIGHT)
+            center = i.get_rect(center=(coord[0]+self.w//10,coord[1]+3*self.h//20))
+            self.win.blit(i,center)
+        if h == 0 and INFO:
+            letters = 'abcdefgh'
+            if self.swapped: letters = letters[::-1]
+            i = self.infofont.render(letters[w], True, INFODARK if col == DARK else INFOLIGHT)
+            center = i.get_rect(center=(coord[0]+9*self.w//10,coord[1]+17*self.h//20))
+            self.win.blit(i,center)
+
     def drawoptions(self, square: tuple, options: list, captureoptions: list) -> None:
         p = self.lookup(square)
         if p is None or options is None: return []
@@ -1080,6 +1100,8 @@ def pyloop():
     running = True
     color = 1
     MOVE = None
+    COLOROVERRIDE = False
+    LOCKTURN = False
     while running:
         turn = True
         highlighted = None
@@ -1096,17 +1118,25 @@ def pyloop():
                     pygame.quit()
                     turn, running = False, False
                 elif event.type == pygame.MOUSEBUTTONDOWN and pygame.mouse.get_pressed()[0]: # Left click
-                    dragging = True
                     pos = pygame.mouse.get_pos()
                     square = board.getsquare(pos)
                     board.draw()
+                    if square in optionsTriggers: # Handleturn
+                        turn = False
+                        if 'castle' in options and square in [(6,0),(6,7)]: MOVE = 'castle'
+                        elif 'longcastle' in options and square in [(1,0),(1,7)]: MOVE = 'longcastle'
+                        else: MOVE = f"{board.code(highlighted)} {board.code(square)}"
+                        break
                     if square is not None:
                         if square == highlighted: lastselect = square
-                        if highlighted is not None: board.drawsquare(square, highlight=highlighted)
+                        if highlighted is not None: 
+                            board.drawsquare(square, highlight=highlighted)
+                            options, captureoptions, optionsTriggers = [],[],[]
                         highlighted = square
                         board.drawsquare(square,highlight=True)
                         p = board.lookup(square)
-                        if p is not None and p.color == color: 
+                        if p is not None and (p.color == color or COLOROVERRIDE):
+                            dragging = True
                             options = board.move_options(square,CHECK=True,CASTLING=True)
                             captureoptions = board.capture_options(square,CHECK=True)
                         optionsTriggers = board.drawoptions(square,options, captureoptions)
@@ -1117,7 +1147,7 @@ def pyloop():
                     if lastselect == square:
                         lastselect = (-1,-1)
                         highlighted = None
-                        options = []
+                        options,captureoptions,optionsTriggers = [],[],[]
                         board.draw(update=True)
                     if dragging:
                         dragging = False
@@ -1135,18 +1165,24 @@ def pyloop():
                         pygame.display.update()
                 elif pygame.mouse.get_pressed()[0] and highlighted is not None and board[highlighted] is not None and dragging:
                     pos = pygame.mouse.get_pos()
+                    currsquare = board.getsquare(pos)
                     board.draw()
-                    board.drawsquare(square,highlight=True,piece=False)
-                    board.drawoptions(square,options,captureoptions)
-                    board.drawsquare(board.getsquare(pos),hl2=True)
+                    if square is not None:
+                        board.drawsquare(square,highlight=True,piece=False)
+                        board.drawoptions(square,options,captureoptions)
+                    if currsquare is not None: 
+                        if currsquare == square: board.drawsquare(currsquare,hl2=True, piece=False)
+                        else: board.drawsquare(currsquare,hl2=True)
                     p = board[highlighted]
                     p = board.piecefont.render(p.symbol, True, WHITEPIECE if p.color else BLACKPIECE)
                     center = p.get_rect(center=(pos[0],pos[1]))
                     board.win.blit(p,center)
                     pygame.display.update()
         if not running: break
-        board.handle_turn(MOVE, color)
-        color = int(not color)
+        if COLOROVERRIDE:
+            if not board.handle_turn(MOVE, color): board.handle_turn(MOVE, int(not color))
+        else: board.handle_turn(MOVE, color)
+        if not LOCKTURN: color = int(not color)
 
 #TODO: Promotions, check/checkmate, admin options (move opponent pieces, set up board), initial screen, turn indicator, timer, custom pieces...
 
