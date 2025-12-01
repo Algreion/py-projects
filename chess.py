@@ -559,7 +559,7 @@ class Board:
                     case _: options = ['rook'] # Misc
                 promo = choice(options)
                 self.setpiece(outcome, name=promo)
-                if LOGS: print(f"Promoted pawn on {outcome} to a {promo.capitalize()}.")
+                if LOGS: print(f"{"WHITE" if color == 1 else "Black"} promoted pawn on {outcome} to a {promo.capitalize()}.")
             return True
         print('\n'+self.show(reverse,bool(info),bool(RICH)))
         if self.checkcheck(color):
@@ -1004,6 +1004,8 @@ HIGHLIGHT = (0,255,0)
 HIGHLIGHT_BORDER = 0
 HIGHLIGHT2 = (100,255,100)
 HIGHLIGHT2_BORDER = 0
+PROMOCOLOR = (255,215,0)
+PROMOINFO = (78,45,0)
 INFO = True
 INFODARK = LIGHT
 INFOLIGHT = DARK
@@ -1029,11 +1031,23 @@ class PyBoard(Board):
         if update: pygame.display.update()
     def drawmenu(self):
         """Renders the initial menu."""
-
-    def drawsquare(self, location: tuple, highlight: bool = False, moveoption: bool = False, piece: bool = True, hl2: bool = False, captureoption: bool = False):
+        pass
+    def drawpromo(self, square: str) -> list:
+        """Handles pawn promotion rendering. drawsquare requires promo=(type: str, color: int, text: str)"""
+        square = self.ind(square)
+        piece = self.lookup(square)
+        if piece is None: return []
+        c = piece.color
+        xcoord = square[0]+1 if square[0] != 7 else 6
+        squares = [(xcoord,i) for i in range(4)] if square[1] == 0 else [(xcoord,7-i) for i in range(4)]
+        for i,O in enumerate([('queen',c,'1'),('knight',c,'2'),('rook',c,'3'),('bishop',c,'4')]):
+            self.drawsquare(squares[i],promo=O)
+        return squares
+    def drawsquare(self, location: tuple, highlight: bool = False, moveoption: bool = False, piece: bool = True, hl2: bool = False, captureoption: bool = False, promo: tuple | None = None):
         """Draws a single square. Location is (x,y)."""
         w,h = location
         col = DARK if (w+h)%2 else LIGHT
+        if promo is not None: col = PROMOCOLOR
         coord = (GAPX+w*self.w,GAPY+h*self.h if self.swapped else GAPY+BOARDH-(1+h)*self.h)
         pygame.draw.rect(self.win,col,(coord[0],coord[1],self.w,self.h))
         if BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
@@ -1049,11 +1063,16 @@ class PyBoard(Board):
         if hl2:
             pygame.draw.rect(self.win,HIGHLIGHT2,(coord[0],coord[1],self.w,self.h),HIGHLIGHT2_BORDER)
             if HIGHLIGHT2_BORDER == 0 and BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
-        p = self[(w,h)]
+        p = self[(w,h)] if promo is None else Piece(promo[0],promo[1])
         if p is not None and piece:
             p = self.piecefont.render(p.symbol, True, WHITEPIECE if p.color else BLACKPIECE)
             center = p.get_rect(center=(coord[0]+self.w//2,coord[1]+self.h//2-SQUAREBORDER_WIDTH))
             self.win.blit(p,center)
+        if promo is not None:
+            i = self.infofont.render(promo[2], True, PROMOINFO)
+            center = i.get_rect(center=(coord[0]+self.w//10,coord[1]+3*self.h//20))
+            self.win.blit(i,center)
+            return
         if w == 0 and INFO:
             nums = '12345678'
             if self.swapped: nums = nums[::-1]
@@ -1180,11 +1199,49 @@ def pyloop():
                     pygame.display.update()
         if not running: break
         if COLOROVERRIDE:
-            if not board.handle_turn(MOVE, color): board.handle_turn(MOVE, int(not color))
-        else: board.handle_turn(MOVE, color)
+            outcome = board.handle_turn(MOVE, color)
+            if not outcome: outcome = board.handle_turn(MOVE, int(not color))
+        else: outcome = board.handle_turn(MOVE, color)
+        if isinstance(outcome, str): # Pawn promotion
+            board.draw()
+            squares = board.drawpromo(square)
+            pygame.display.update()
+            prompting = True
+            if LOGS: print(f"{"White" if color == 1 else "Black"} promoting pawn on {outcome}.\n(Q/Space = Queen | N = Knight | R = Rook | B = Bishop)")
+            while prompting:
+                promo = None
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pprint("Quitting...")
+                        pygame.quit()
+                        prompting, running = False, False
+                    elif event.type == pygame.KEYDOWN:
+                        if event.key in [pygame.K_q,pygame.K_1,pygame.K_SPACE]:
+                            promo = 'queen'
+                            prompting = False
+                        elif event.key in [pygame.K_n,pygame.K_2]:
+                            promo = 'knight'
+                            prompting = False
+                        elif event.key in [pygame.K_r,pygame.K_3]:
+                            promo = 'rook'
+                            prompting = False
+                        elif event.key in [pygame.K_b,pygame.K_4]:
+                            promo = 'bishop'
+                            prompting = False
+                    elif event.type == pygame.MOUSEBUTTONDOWN:
+                        pos = pygame.mouse.get_pos()
+                        square = board.getsquare(pos)
+                        if square in squares:
+                            promo = ['queen','knight','rook','bishop'][squares.index(square)]
+                            prompting = False
+                if not prompting: break
+            if not running: break
+            if promo is not None:
+                board.setpiece(outcome, name=promo)
+                if LOGS: print(f"{"White" if color == 1 else "Black"} promoted pawn on {outcome} to a {promo.capitalize()}.")
         if not LOCKTURN: color = int(not color)
 
-#TODO: Promotions, check/checkmate, admin options (move opponent pieces, set up board), initial screen, turn indicator, timer, custom pieces...
+#TODO: Check/checkmate, admin options (move opponent pieces, set up board), initial screen, turn indicator, timer, custom pieces...
 
 if __name__ == '__main__':
     # superloop()
