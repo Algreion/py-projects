@@ -300,7 +300,7 @@ class Board:
             else:
                 while True:
                     try: x = input(f"Ambiguous move, applies to pieces on: {pieces}. Specify square: ")
-                    except: pprint("Quitting...") or quit()
+                    except: (LOGS and pprint("Quitting...")) or quit()
                     if x in pieces: return f"{x} {square2}"
                     elif x.isdigit() and 0<int(x)<=len(pieces): return f"{pieces[int(x)-1]} {square2}"
                     print("Invalid choice.")
@@ -1009,6 +1009,9 @@ PROMOINFO = (78,45,0)
 INFO = True
 INFODARK = LIGHT
 INFOLIGHT = DARK
+MENUBG = (255,255,255)
+MENUFONT = (0,0,0)
+MENUBUTTONS = (0,0,0)
 
 WIDTH -= (WIDTH-2*GAPX)%8
 HEIGHT -= (HEIGHT-2*GAPY)%8
@@ -1021,6 +1024,9 @@ class PyBoard(Board):
         self.w, self.h = BOARDW//8,BOARDH//8
         self.piecefont = pygame.font.Font("C:/Windows/Fonts/seguisym.ttf", min(self.w,self.h))
         self.infofont = pygame.sysfont.SysFont("arial",min(self.w,self.h)//5)
+        self.menufont = pygame.sysfont.SysFont("verdana",min(WIDTH,HEIGHT)//10)
+        self.menuoptionfont = pygame.sysfont.SysFont("arial",min(WIDTH,HEIGHT)//15)
+        self.font = pygame.sysfont.SysFont("verdana",min(WIDTH,HEIGHT)//30)
         self.swapped = False
     def draw(self, update: bool = False): # Still need to add info (letters/numbers)
         """Renders the full board."""
@@ -1029,9 +1035,58 @@ class PyBoard(Board):
             for w in range(8):
                 self.drawsquare((w,h))
         if update: pygame.display.update()
-    def drawmenu(self):
-        """Renders the initial menu."""
-        pass
+    def drawmenu(self, stats: tuple | None = None, update: bool = True) -> list:
+        """Renders the initial menu. Stats = (white wins, black wins)"""
+        buttons = []
+        self.win.fill(MENUBG)
+        i = self.menufont.render("PyChess", True, MENUFONT)
+        surf = i.get_rect(center=(WIDTH//2,HEIGHT//5))
+        self.win.blit(i,surf)
+        buttonwidth = WIDTH//2
+        stats = (333,666)
+        if stats is not None:
+            w, b = stats
+            wperc = 0 if w+b == 0 else 100*w/(w+b)
+            bperc = 0 if w+b == 0 else 100-wperc
+            i = self.font.render(f"White wins: {w} ({wperc:.1f}%) | Black wins: {b} ({bperc:.1f}%)", True, MENUFONT)
+            self.win.blit(i,i.get_rect(center=(WIDTH//2,3*HEIGHT//10)))
+        i = self.menuoptionfont.render("PLAY", True, MENUFONT)
+        surf = i.get_rect(center=(WIDTH//2,4*HEIGHT//10))
+        self.win.blit(i, surf)
+        center, surf.width = surf.center, buttonwidth
+        surf.center = center
+        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
+        buttons.append(surf)
+        i = self.menuoptionfont.render("PLAY VS BOT", True, MENUFONT)
+        surf = i.get_rect(center=(WIDTH//2,5*HEIGHT//10))
+        self.win.blit(i, surf)
+        center, surf.width = surf.center, buttonwidth
+        surf.center = center
+        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
+        buttons.append(surf)
+        i = self.menuoptionfont.render("LOAD", True, MENUFONT)
+        surf = i.get_rect(center=(WIDTH//2,6*HEIGHT//10))
+        self.win.blit(i, surf)
+        center, surf.width = surf.center, buttonwidth
+        surf.center = center
+        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
+        buttons.append(surf)
+        i = self.menuoptionfont.render("SETTINGS", True, MENUFONT)
+        surf = i.get_rect(center=(WIDTH//2,7*HEIGHT//10))
+        self.win.blit(i, surf)
+        center, surf.width = surf.center, buttonwidth
+        surf.center = center
+        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
+        buttons.append(surf)
+        i = self.menuoptionfont.render("QUIT", True, MENUFONT)
+        surf = i.get_rect(center=(WIDTH//2,8*HEIGHT//10))
+        self.win.blit(i, surf)
+        center, surf.width = surf.center, buttonwidth
+        surf.center = center
+        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
+        buttons.append(surf)
+        if update: pygame.display.update()
+        return buttons
     def drawpromo(self, square: str) -> list:
         """Handles pawn promotion rendering. drawsquare requires promo=(type: str, color: int, text: str)"""
         square = self.ind(square)
@@ -1116,132 +1171,158 @@ def pyloop():
     window = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("PyChess")
     board = PyBoard(window, True)
-    running = True
+    menu = True
     color = 1
     MOVE = None
+    SWAPPING = False
     COLOROVERRIDE = False
     LOCKTURN = False
-    while running:
-        turn = True
-        highlighted = None
-        dragging = False
-        lastselect = (-1,-1)
-        options = []
-        captureoptions = []
-        optionsTriggers = []
-        board.draw(update=True)
-        while turn:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pprint("Quitting...")
+    white, black, total = 0, 0, 0
+    while menu:
+        running = False
+        buttons = board.drawmenu((white,black))
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                if LOGS: pprint("Quitting...")
+                pygame.quit()
+                menu = False
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                mx,my = pygame.mouse.get_pos()
+                if buttons[0].collidepoint(mx,my): # Play
+                    print("PLAY")
+                elif buttons[1].collidepoint(mx,my): # Play vs bot
+                    print("PLAY VS BOT")
+                elif buttons[2].collidepoint(mx,my): # Load board
+                    print("LOAD")
+                elif buttons[3].collidepoint(mx,my): # Settings
+                    print("SETTINGS")
+                elif buttons[4].collidepoint(mx,my): # Quit
+                    if LOGS: pprint("Quitting...")
+                    menu = False
                     pygame.quit()
-                    turn, running = False, False
-                elif event.type == pygame.MOUSEBUTTONDOWN and pygame.mouse.get_pressed()[0]: # Left click
-                    pos = pygame.mouse.get_pos()
-                    square = board.getsquare(pos)
-                    board.draw()
-                    if square in optionsTriggers: # Handleturn
-                        turn = False
-                        if 'castle' in options and square in [(6,0),(6,7)]: MOVE = 'castle'
-                        elif 'longcastle' in options and square in [(1,0),(1,7)]: MOVE = 'longcastle'
-                        else: MOVE = f"{board.code(highlighted)} {board.code(square)}"
-                        break
-                    if square is not None:
-                        if square == highlighted: lastselect = square
-                        if highlighted is not None: 
-                            board.drawsquare(square, highlight=highlighted)
-                            options, captureoptions, optionsTriggers = [],[],[]
-                        highlighted = square
-                        board.drawsquare(square,highlight=True)
-                        p = board.lookup(square)
-                        if p is not None and (p.color == color or COLOROVERRIDE):
-                            dragging = True
-                            options = board.move_options(square,CHECK=True,CASTLING=True)
-                            captureoptions = board.capture_options(square,CHECK=True)
-                        optionsTriggers = board.drawoptions(square,options, captureoptions)
-                    pygame.display.update()
-                elif event.type == pygame.MOUSEBUTTONUP:
-                    pos = pygame.mouse.get_pos()
-                    square = board.getsquare(pos)
-                    if lastselect == square:
-                        lastselect = (-1,-1)
-                        highlighted = None
-                        options,captureoptions,optionsTriggers = [],[],[]
-                        board.draw(update=True)
-                    if dragging:
-                        dragging = False
+        while running:
+            turn = True
+            highlighted = None
+            dragging = False
+            lastselect = (-1,-1)
+            options = []
+            captureoptions = []
+            optionsTriggers = []
+            board.draw(update=True)
+            while turn:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        if LOGS: pprint("Quitting...")
+                        pygame.quit()
+                        turn, running = False, False
+                    elif event.type == pygame.MOUSEBUTTONDOWN and pygame.mouse.get_pressed()[0]: # Left click
+                        pos = pygame.mouse.get_pos()
+                        square = board.getsquare(pos)
+                        board.draw()
                         if square in optionsTriggers: # Handleturn
                             turn = False
                             if 'castle' in options and square in [(6,0),(6,7)]: MOVE = 'castle'
                             elif 'longcastle' in options and square in [(1,0),(1,7)]: MOVE = 'longcastle'
                             else: MOVE = f"{board.code(highlighted)} {board.code(square)}"
                             break
-                        board.draw()
-                        if highlighted is not None:
-                            pos = board.drawsquare(location=highlighted,highlight=True)
-                        if options:
-                            for o in options: board.drawsquare(o,moveoption=True)
+                        if square is not None:
+                            if square == highlighted: lastselect = square
+                            if highlighted is not None: 
+                                board.drawsquare(square, highlight=highlighted)
+                                options, captureoptions, optionsTriggers = [],[],[]
+                            highlighted = square
+                            board.drawsquare(square,highlight=True)
+                            p = board.lookup(square)
+                            if p is not None and (p.color == color or COLOROVERRIDE):
+                                dragging = True
+                                options = board.move_options(square,CHECK=True,CASTLING=True)
+                                captureoptions = board.capture_options(square,CHECK=True)
+                            optionsTriggers = board.drawoptions(square,options, captureoptions)
                         pygame.display.update()
-                elif pygame.mouse.get_pressed()[0] and highlighted is not None and board[highlighted] is not None and dragging:
-                    pos = pygame.mouse.get_pos()
-                    currsquare = board.getsquare(pos)
-                    board.draw()
-                    if square is not None:
-                        board.drawsquare(square,highlight=True,piece=False)
-                        board.drawoptions(square,options,captureoptions)
-                    if currsquare is not None: 
-                        if currsquare == square: board.drawsquare(currsquare,hl2=True, piece=False)
-                        else: board.drawsquare(currsquare,hl2=True)
-                    p = board[highlighted]
-                    p = board.piecefont.render(p.symbol, True, WHITEPIECE if p.color else BLACKPIECE)
-                    center = p.get_rect(center=(pos[0],pos[1]))
-                    board.win.blit(p,center)
-                    pygame.display.update()
-        if not running: break
-        if COLOROVERRIDE:
-            outcome = board.handle_turn(MOVE, color)
-            if not outcome: outcome = board.handle_turn(MOVE, int(not color))
-        else: outcome = board.handle_turn(MOVE, color)
-        if isinstance(outcome, str): # Pawn promotion
-            board.draw()
-            squares = board.drawpromo(square)
-            pygame.display.update()
-            prompting = True
-            if LOGS: print(f"{"White" if color == 1 else "Black"} promoting pawn on {outcome}.\n(Q/Space = Queen | N = Knight | R = Rook | B = Bishop)")
-            while prompting:
-                promo = None
-                for event in pygame.event.get():
-                    if event.type == pygame.QUIT:
-                        pprint("Quitting...")
-                        pygame.quit()
-                        prompting, running = False, False
-                    elif event.type == pygame.KEYDOWN:
-                        if event.key in [pygame.K_q,pygame.K_1,pygame.K_SPACE]:
-                            promo = 'queen'
-                            prompting = False
-                        elif event.key in [pygame.K_n,pygame.K_2]:
-                            promo = 'knight'
-                            prompting = False
-                        elif event.key in [pygame.K_r,pygame.K_3]:
-                            promo = 'rook'
-                            prompting = False
-                        elif event.key in [pygame.K_b,pygame.K_4]:
-                            promo = 'bishop'
-                            prompting = False
-                    elif event.type == pygame.MOUSEBUTTONDOWN:
+                    elif event.type == pygame.MOUSEBUTTONUP:
                         pos = pygame.mouse.get_pos()
                         square = board.getsquare(pos)
-                        if square in squares:
-                            promo = ['queen','knight','rook','bishop'][squares.index(square)]
-                            prompting = False
-                if not prompting: break
+                        if lastselect == square:
+                            lastselect = (-1,-1)
+                            highlighted = None
+                            options,captureoptions,optionsTriggers = [],[],[]
+                            board.draw(update=True)
+                        if dragging:
+                            dragging = False
+                            if square in optionsTriggers: # Handleturn
+                                turn = False
+                                if 'castle' in options and square in [(6,0),(6,7)]: MOVE = 'castle'
+                                elif 'longcastle' in options and square in [(1,0),(1,7)]: MOVE = 'longcastle'
+                                else: MOVE = f"{board.code(highlighted)} {board.code(square)}"
+                                break
+                            board.draw()
+                            if highlighted is not None:
+                                pos = board.drawsquare(location=highlighted,highlight=True)
+                            if options:
+                                for o in options: board.drawsquare(o,moveoption=True)
+                            pygame.display.update()
+                    elif pygame.mouse.get_pressed()[0] and highlighted is not None and board[highlighted] is not None and dragging:
+                        pos = pygame.mouse.get_pos()
+                        currsquare = board.getsquare(pos)
+                        board.draw()
+                        if square is not None:
+                            board.drawsquare(square,highlight=True,piece=False)
+                            board.drawoptions(square,options,captureoptions)
+                        if currsquare is not None: 
+                            if currsquare == square: board.drawsquare(currsquare,hl2=True, piece=False)
+                            else: board.drawsquare(currsquare,hl2=True)
+                        p = board[highlighted]
+                        p = board.piecefont.render(p.symbol, True, WHITEPIECE if p.color else BLACKPIECE)
+                        center = p.get_rect(center=(pos[0],pos[1]))
+                        board.win.blit(p,center)
+                        pygame.display.update()
             if not running: break
-            if promo is not None:
-                board.setpiece(outcome, name=promo)
-                if LOGS: print(f"{"White" if color == 1 else "Black"} promoted pawn on {outcome} to a {promo.capitalize()}.")
-        if not LOCKTURN: color = int(not color)
+            if COLOROVERRIDE:
+                outcome = board.handle_turn(MOVE, color)
+                if not outcome: outcome = board.handle_turn(MOVE, int(not color))
+            else: outcome = board.handle_turn(MOVE, color)
+            if isinstance(outcome, str): # Pawn promotion
+                board.draw()
+                squares = board.drawpromo(square)
+                pygame.display.update()
+                prompting = True
+                if LOGS: print(f"{"White" if color == 1 else "Black"} promoting pawn on {outcome}.\n(Q/Space = Queen | N = Knight | R = Rook | B = Bishop)")
+                while prompting:
+                    promo = None
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            if LOGS: pprint("Quitting...")
+                            pygame.quit()
+                            prompting, running = False, False
+                        elif event.type == pygame.KEYDOWN:
+                            if event.key in [pygame.K_q,pygame.K_1,pygame.K_SPACE]:
+                                promo = 'queen'
+                                prompting = False
+                            elif event.key in [pygame.K_n,pygame.K_2]:
+                                promo = 'knight'
+                                prompting = False
+                            elif event.key in [pygame.K_r,pygame.K_3]:
+                                promo = 'rook'
+                                prompting = False
+                            elif event.key in [pygame.K_b,pygame.K_4]:
+                                promo = 'bishop'
+                                prompting = False
+                        elif event.type == pygame.MOUSEBUTTONDOWN:
+                            pos = pygame.mouse.get_pos()
+                            square = board.getsquare(pos)
+                            if square in squares:
+                                promo = ['queen','knight','rook','bishop'][squares.index(square)]
+                                prompting = False
+                    if not prompting: break
+                if not running: break
+                if promo is not None:
+                    board.setpiece(outcome, name=promo)
+                    if LOGS: print(f"{"White" if color == 1 else "Black"} promoted pawn on {outcome} to a {promo.capitalize()}.")
+            if not LOCKTURN: 
+                color = int(not color)
+                if SWAPPING: board.swapped = not board.swapped
 
-#TODO: Check/checkmate, admin options (move opponent pieces, set up board), initial screen, turn indicator, timer, custom pieces...
+#TODO: Check/checkmate, admin options (move opponent pieces, set up board), finish initial screen, turn indicator, timer, custom pieces...
 
 if __name__ == '__main__':
     # superloop()
