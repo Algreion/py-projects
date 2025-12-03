@@ -245,6 +245,7 @@ class Board:
         return "\n".join(res)
     def setup(self) -> bool:
         """Sets up board with correct pieces."""
+        self.clear()
         if (self.W,self.H) != (8,8): return False
         self.whitemoved = [False,False,False]
         self.blackmoved = [False,False,False]
@@ -1012,6 +1013,9 @@ INFOLIGHT = DARK
 MENUBG = (255,255,255)
 MENUFONT = (0,0,0)
 MENUBUTTONS = (0,0,0)
+ENDFONT = (0,200,255)
+ENDBUTTONS = (255,255,255)
+ENDBUTTONSFONT = (0,0,0)
 
 WIDTH -= (WIDTH-2*GAPX)%8
 HEIGHT -= (HEIGHT-2*GAPY)%8
@@ -1036,19 +1040,18 @@ class PyBoard(Board):
                 self.drawsquare((w,h))
         if update: pygame.display.update()
     def drawmenu(self, stats: tuple | None = None, update: bool = True) -> list:
-        """Renders the initial menu. Stats = (white wins, black wins)"""
+        """Renders initial menu. Stats = (white wins, black wins). Returns list of buttons."""
         buttons = []
         self.win.fill(MENUBG)
         i = self.menufont.render("PyChess", True, MENUFONT)
         surf = i.get_rect(center=(WIDTH//2,HEIGHT//5))
         self.win.blit(i,surf)
         buttonwidth = WIDTH//2
-        stats = (333,666)
         if stats is not None:
             w, b = stats
             wperc = 0 if w+b == 0 else 100*w/(w+b)
             bperc = 0 if w+b == 0 else 100-wperc
-            i = self.font.render(f"White wins: {w} ({wperc:.1f}%) | Black wins: {b} ({bperc:.1f}%)", True, MENUFONT)
+            i = self.font.render(f"White wins: {w} ({wperc:.0f}%) | Black wins: {b} ({bperc:.0f}%)", True, MENUFONT)
             self.win.blit(i,i.get_rect(center=(WIDTH//2,3*HEIGHT//10)))
         i = self.menuoptionfont.render("PLAY", True, MENUFONT)
         surf = i.get_rect(center=(WIDTH//2,4*HEIGHT//10))
@@ -1086,6 +1089,42 @@ class PyBoard(Board):
         pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
         buttons.append(surf)
         if update: pygame.display.update()
+        return buttons
+    def drawend(self, result: int) -> list:
+        """Renders screen at end of match. Returns list of buttons."""
+        buttons = []
+        self.draw()
+        w, h = self.win.get_size()
+        small = pygame.transform.smoothscale(self.win, (w//3, h//3))
+        blurred = pygame.transform.smoothscale(small, (w, h))
+        self.win.blit(blurred, (0, 0))
+        result1 = "CHECKMATE" if result in [0,1] else "STALEMATE"
+        i = self.menufont.render(result1, True, ENDFONT)
+        surf = i.get_rect(center=(WIDTH//2,3*HEIGHT//10))
+        self.win.blit(i,surf)
+        result1 = "White wins!" if result == 1 else "Black wins!" if result == 0 else "It's a draw."
+        col = WHITEPIECE if result == 1 else BLACKPIECE
+        i = self.menufont.render(result1, True, col)
+        surf = i.get_rect(center=(WIDTH//2,4.5*HEIGHT//10))
+        self.win.blit(i,surf)
+        buttonwidth = WIDTH//2
+        i = self.menuoptionfont.render("PLAY AGAIN", True, ENDBUTTONSFONT)
+        surf = i.get_rect(center=(WIDTH//2,6*HEIGHT//10))
+        text = surf.copy()
+        center, surf.width = surf.center, buttonwidth
+        surf.center = center
+        pygame.draw.rect(self.win, ENDBUTTONS, surf.inflate(0, WIDTH//40), 0)
+        self.win.blit(i, text)
+        buttons.append(surf)
+        i = self.menuoptionfont.render("MENU", True, ENDBUTTONSFONT)
+        surf = i.get_rect(center=(WIDTH//2,7.5*HEIGHT//10))
+        text = surf.copy()
+        center, surf.width = surf.center, buttonwidth
+        surf.center = center
+        pygame.draw.rect(self.win, ENDBUTTONS, surf.inflate(0, WIDTH//40), 0)
+        self.win.blit(i, text)
+        buttons.append(surf)
+        pygame.display.update()
         return buttons
     def drawpromo(self, square: str) -> list:
         """Handles pawn promotion rendering. drawsquare requires promo=(type: str, color: int, text: str)"""
@@ -1170,37 +1209,45 @@ class PyBoard(Board):
 def pyloop():
     window = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("PyChess")
-    board = PyBoard(window, True)
-    menu = True
+    board = PyBoard(window)
+    running = True
     color = 1
     MOVE = None
     SWAPPING = False
     COLOROVERRIDE = False
     LOCKTURN = False
-    white, black, total = 0, 0, 0
-    while menu:
-        running = False
-        buttons = board.drawmenu((white,black))
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                if LOGS: pprint("Quitting...")
-                pygame.quit()
-                menu = False
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                mx,my = pygame.mouse.get_pos()
-                if buttons[0].collidepoint(mx,my): # Play
-                    print("PLAY")
-                elif buttons[1].collidepoint(mx,my): # Play vs bot
-                    print("PLAY VS BOT")
-                elif buttons[2].collidepoint(mx,my): # Load board
-                    print("LOAD")
-                elif buttons[3].collidepoint(mx,my): # Settings
-                    print("SETTINGS")
-                elif buttons[4].collidepoint(mx,my): # Quit
+    white, black, total, botwins = 0, 0, 0, 0
+    menu = True
+    settings, match, endscreen = False, False, False
+    result = -1
+    while running:
+        if menu: buttons = board.drawmenu((white,black))
+        while menu:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
                     if LOGS: pprint("Quitting...")
-                    menu = False
                     pygame.quit()
-        while running:
+                    menu, running = False, False
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    mx,my = pygame.mouse.get_pos()
+                    if buttons[0].collidepoint(mx,my): # Play
+                        color = 1
+                        MOVE = None
+                        board.setup()
+                        menu, match = False, True
+                    elif buttons[1].collidepoint(mx,my): # Play vs bot
+                        print("PLAY VS BOT")
+                    elif buttons[2].collidepoint(mx,my): # Load board
+                        print("LOAD")
+                    elif buttons[3].collidepoint(mx,my): # Settings
+                        print("SETTINGS")
+                    elif buttons[4].collidepoint(mx,my): # Quit
+                        if LOGS: pprint("Quitting...")
+                        menu, running = False, False
+                        pygame.quit()
+        while settings:
+            pass
+        while match:
             turn = True
             highlighted = None
             dragging = False
@@ -1214,7 +1261,12 @@ def pyloop():
                     if event.type == pygame.QUIT:
                         if LOGS: pprint("Quitting...")
                         pygame.quit()
-                        turn, running = False, False
+                        turn, match, running = False, False, False
+                    elif event.type == pygame.KEYDOWN:
+                        if event.key in [pygame.K_ESCAPE, pygame.K_x]:
+                            turn, match = False, False
+                            menu = True
+                            break
                     elif event.type == pygame.MOUSEBUTTONDOWN and pygame.mouse.get_pressed()[0]: # Left click
                         pos = pygame.mouse.get_pos()
                         square = board.getsquare(pos)
@@ -1257,9 +1309,8 @@ def pyloop():
                                 break
                             board.draw()
                             if highlighted is not None:
-                                pos = board.drawsquare(location=highlighted,highlight=True)
-                            if options:
-                                for o in options: board.drawsquare(o,moveoption=True)
+                                board.drawsquare(location=highlighted,highlight=True)
+                                board.drawoptions(highlighted,options,captureoptions)
                             pygame.display.update()
                     elif pygame.mouse.get_pressed()[0] and highlighted is not None and board[highlighted] is not None and dragging:
                         pos = pygame.mouse.get_pos()
@@ -1276,7 +1327,7 @@ def pyloop():
                         center = p.get_rect(center=(pos[0],pos[1]))
                         board.win.blit(p,center)
                         pygame.display.update()
-            if not running: break
+            if not match: break
             if COLOROVERRIDE:
                 outcome = board.handle_turn(MOVE, color)
                 if not outcome: outcome = board.handle_turn(MOVE, int(not color))
@@ -1293,7 +1344,7 @@ def pyloop():
                         if event.type == pygame.QUIT:
                             if LOGS: pprint("Quitting...")
                             pygame.quit()
-                            prompting, running = False, False
+                            prompting, match = False, False
                         elif event.type == pygame.KEYDOWN:
                             if event.key in [pygame.K_q,pygame.K_1,pygame.K_SPACE]:
                                 promo = 'queen'
@@ -1307,6 +1358,10 @@ def pyloop():
                             elif event.key in [pygame.K_b,pygame.K_4]:
                                 promo = 'bishop'
                                 prompting = False
+                            elif event.key in [pygame.K_x, pygame.K_ESCAPE]:
+                                turn, match, prompting = False, False, False
+                                menu = True
+                                break
                         elif event.type == pygame.MOUSEBUTTONDOWN:
                             pos = pygame.mouse.get_pos()
                             square = board.getsquare(pos)
@@ -1314,15 +1369,42 @@ def pyloop():
                                 promo = ['queen','knight','rook','bishop'][squares.index(square)]
                                 prompting = False
                     if not prompting: break
-                if not running: break
+                if not match: break
                 if promo is not None:
                     board.setpiece(outcome, name=promo)
                     if LOGS: print(f"{"White" if color == 1 else "Black"} promoted pawn on {outcome} to a {promo.capitalize()}.")
             if not LOCKTURN: 
                 color = int(not color)
                 if SWAPPING: board.swapped = not board.swapped
+            if board.stalemate(color) or board.drawmate():
+                if LOGS: print(f"[bold]Stalemate![/bold]")
+                result = -1
+                total += 1
+            if board.checkmate(color):
+                if LOGS: print(f"\n[bold]Checkmate![/bold] {f"[{WHITE}]White[/{WHITE}]" if color==0 else f"[{BLACK}]Black[/{BLACK}]"} has won.")
+                result = int(not color)
+                total += 1
+                if result == 0: black += 1
+                else: white += 1
+                match, menu = False, True
+                endscreen = True
+        if endscreen: buttons = board.drawend(result)
+        while endscreen:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    if LOGS: pprint("Quitting...")
+                    pygame.quit()
+                    endscreen, running = False, False
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                        endscreen, menu = False, True
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    mx,my = pygame.mouse.get_pos()
+                    if buttons[0].collidepoint(mx,my): # Play again
+                        endscreen, menu, match = False, False, True
+                    elif buttons[1].collidepoint(mx,my): # Menu
+                        endscreen, menu = False, True
 
-#TODO: Check/checkmate, admin options (move opponent pieces, set up board), finish initial screen, turn indicator, timer, custom pieces...
+#TODO: Continue option in menu (only appears later), change settings to keybind help (?), admin options (move opponent pieces, set up board), finish initial screen, turn indicator, timer, custom pieces...
 
 if __name__ == '__main__':
     # superloop()
