@@ -1039,7 +1039,7 @@ class PyBoard(Board):
             for w in range(8):
                 self.drawsquare((w,h))
         if update: pygame.display.update()
-    def drawmenu(self, stats: tuple | None = None, update: bool = True) -> list:
+    def drawmenu(self, stats: tuple | None = None, update: bool = True, cont: tuple | None = None) -> list:
         """Renders initial menu. Stats = (white wins, black wins). Returns list of buttons."""
         buttons = []
         self.win.fill(MENUBG)
@@ -1047,6 +1047,7 @@ class PyBoard(Board):
         surf = i.get_rect(center=(WIDTH//2,HEIGHT//5))
         self.win.blit(i,surf)
         buttonwidth = WIDTH//2
+        H = 0 if cont is None else 1
         if stats is not None:
             w, b = stats
             wperc = 0 if w+b == 0 else 100*w/(w+b)
@@ -1054,40 +1055,48 @@ class PyBoard(Board):
             i = self.font.render(f"White wins: {w} ({wperc:.0f}%) | Black wins: {b} ({bperc:.0f}%)", True, MENUFONT)
             self.win.blit(i,i.get_rect(center=(WIDTH//2,3*HEIGHT//10)))
         i = self.menuoptionfont.render("PLAY", True, MENUFONT)
-        surf = i.get_rect(center=(WIDTH//2,4*HEIGHT//10))
+        surf = i.get_rect(center=(WIDTH//2,(4+H)*HEIGHT//10))
         self.win.blit(i, surf)
         center, surf.width = surf.center, buttonwidth
         surf.center = center
         pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
         buttons.append(surf)
         i = self.menuoptionfont.render("PLAY VS BOT", True, MENUFONT)
-        surf = i.get_rect(center=(WIDTH//2,5*HEIGHT//10))
+        surf = i.get_rect(center=(WIDTH//2,(5+H)*HEIGHT//10))
         self.win.blit(i, surf)
         center, surf.width = surf.center, buttonwidth
         surf.center = center
         pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
         buttons.append(surf)
         i = self.menuoptionfont.render("LOAD", True, MENUFONT)
-        surf = i.get_rect(center=(WIDTH//2,6*HEIGHT//10))
+        surf = i.get_rect(center=(WIDTH//2,(6+H)*HEIGHT//10))
         self.win.blit(i, surf)
         center, surf.width = surf.center, buttonwidth
         surf.center = center
         pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
         buttons.append(surf)
         i = self.menuoptionfont.render("SETTINGS", True, MENUFONT)
-        surf = i.get_rect(center=(WIDTH//2,7*HEIGHT//10))
+        surf = i.get_rect(center=(WIDTH//2,(7+H)*HEIGHT//10))
         self.win.blit(i, surf)
         center, surf.width = surf.center, buttonwidth
         surf.center = center
         pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
         buttons.append(surf)
         i = self.menuoptionfont.render("QUIT", True, MENUFONT)
-        surf = i.get_rect(center=(WIDTH//2,8*HEIGHT//10))
+        surf = i.get_rect(center=(WIDTH//2,(8+H)*HEIGHT//10))
         self.win.blit(i, surf)
         center, surf.width = surf.center, buttonwidth
         surf.center = center
         pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
         buttons.append(surf)
+        if cont is not None:
+            i = self.menuoptionfont.render("CONTINUE", True, MENUFONT)
+            surf = i.get_rect(center=(WIDTH//2,4*HEIGHT//10))
+            self.win.blit(i, surf)
+            center, surf.width = surf.center, buttonwidth
+            surf.center = center
+            pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
+            buttons.append(surf)
         if update: pygame.display.update()
         return buttons
     def drawend(self, result: int) -> list:
@@ -1220,8 +1229,9 @@ def pyloop():
     menu = True
     settings, match, endscreen = False, False, False
     result = -1
+    save = None # (color)
     while running:
-        if menu: buttons = board.drawmenu((white,black))
+        if menu: buttons = board.drawmenu((white,black),cont = save)
         while menu:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -1233,6 +1243,8 @@ def pyloop():
                     if buttons[0].collidepoint(mx,my): # Play
                         color = 1
                         MOVE = None
+                        save = None
+                        result = -1
                         board.setup()
                         menu, match = False, True
                     elif buttons[1].collidepoint(mx,my): # Play vs bot
@@ -1245,6 +1257,10 @@ def pyloop():
                         if LOGS: pprint("Quitting...")
                         menu, running = False, False
                         pygame.quit()
+                    elif save is not None and buttons[5].collidepoint(mx,my): # Continue
+                        color = save[0]
+                        MOVE = None
+                        menu, match = False, True
         while settings:
             pass
         while match:
@@ -1255,7 +1271,12 @@ def pyloop():
             options = []
             captureoptions = []
             optionsTriggers = []
+            outcome = False
             board.draw(update=True)
+            if save is not None and len(save)>1 and isinstance(save[1],str):
+                turn = False
+                outcome = save[1]
+                save = None
             while turn:
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
@@ -1266,6 +1287,7 @@ def pyloop():
                         if event.key in [pygame.K_ESCAPE, pygame.K_x]:
                             turn, match = False, False
                             menu = True
+                            save = (color,)
                             break
                     elif event.type == pygame.MOUSEBUTTONDOWN and pygame.mouse.get_pressed()[0]: # Left click
                         pos = pygame.mouse.get_pos()
@@ -1328,10 +1350,11 @@ def pyloop():
                         board.win.blit(p,center)
                         pygame.display.update()
             if not match: break
-            if COLOROVERRIDE:
+            if COLOROVERRIDE and not outcome:
                 outcome = board.handle_turn(MOVE, color)
                 if not outcome: outcome = board.handle_turn(MOVE, int(not color))
-            else: outcome = board.handle_turn(MOVE, color)
+            elif not outcome:
+                outcome = board.handle_turn(MOVE, color)
             if isinstance(outcome, str): # Pawn promotion
                 board.draw()
                 squares = board.drawpromo(square)
@@ -1361,6 +1384,7 @@ def pyloop():
                             elif event.key in [pygame.K_x, pygame.K_ESCAPE]:
                                 turn, match, prompting = False, False, False
                                 menu = True
+                                save = (color,outcome)
                                 break
                         elif event.type == pygame.MOUSEBUTTONDOWN:
                             pos = pygame.mouse.get_pos()
@@ -1404,7 +1428,7 @@ def pyloop():
                     elif buttons[1].collidepoint(mx,my): # Menu
                         endscreen, menu = False, True
 
-#TODO: Continue option in menu (only appears later), change settings to keybind help (?), admin options (move opponent pieces, set up board), finish initial screen, turn indicator, timer, custom pieces...
+#TODO: Change settings to keybind help (?), admin options (move opponent pieces, set up board), finish initial screen, turn indicator, timer, custom pieces...
 
 if __name__ == '__main__':
     # superloop()
