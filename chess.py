@@ -1188,7 +1188,6 @@ class PyBoard(Board):
             i = self.infofont.render(letters[w], True, INFODARK if col == DARK else INFOLIGHT)
             center = i.get_rect(center=(coord[0]+9*self.w//10,coord[1]+17*self.h//20))
             self.win.blit(i,center)
-
     def drawoptions(self, square: tuple, options: list, captureoptions: list) -> None:
         p = self.lookup(square)
         if p is None or options is None: return []
@@ -1214,7 +1213,38 @@ class PyBoard(Board):
         X,Y = pos
         x,y = (X-GAPX)//self.w, (Y-GAPY)//self.h if self.swapped else -1-((Y-GAPY-BOARDH)//self.h)
         return (x,y) if 0<=x<8 and 0<=y<8 else None
-
+    def drawbot(self, col: bool = False) -> int:
+        """Renders bot settings. col=False: difficulty, col=True: Player color."""
+        buttons = []
+        words = ["Player's Color","WHITE","BLACK","RANDOM"] if col else ["Bot Level", "EASY","MEDIUM","HARD"]
+        self.win.fill(MENUBG)
+        i = self.menufont.render(words[0], True, MENUFONT)
+        surf = i.get_rect(center=(WIDTH//2,HEIGHT//5))
+        self.win.blit(i,surf)
+        buttonwidth = WIDTH//2
+        i = self.menuoptionfont.render(words[1], True, MENUFONT)
+        surf = i.get_rect(center=(WIDTH//2,4*HEIGHT//10))
+        self.win.blit(i, surf)
+        center, surf.width = surf.center, buttonwidth
+        surf.center = center
+        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
+        buttons.append(surf)
+        i = self.menuoptionfont.render(words[2], True, MENUFONT)
+        surf = i.get_rect(center=(WIDTH//2,5*HEIGHT//10))
+        self.win.blit(i, surf)
+        center, surf.width = surf.center, buttonwidth
+        surf.center = center
+        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
+        buttons.append(surf)
+        i = self.menuoptionfont.render(words[3], True, MENUFONT)
+        surf = i.get_rect(center=(WIDTH//2,6*HEIGHT//10))
+        self.win.blit(i, surf)
+        center, surf.width = surf.center, buttonwidth
+        surf.center = center
+        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
+        buttons.append(surf)
+        pygame.display.update()
+        return buttons
 def pyloop():
     window = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("PyChess")
@@ -1229,7 +1259,8 @@ def pyloop():
     menu = True
     settings, match, endscreen = False, False, False
     result = -1
-    save = None # (color)
+    save = None # (color,promotion)
+    botplay = None # (botcolor,botlogic)
     while running:
         if menu: buttons = board.drawmenu((white,black),cont = save)
         while menu:
@@ -1238,26 +1269,94 @@ def pyloop():
                     if LOGS: pprint("Quitting...")
                     pygame.quit()
                     menu, running = False, False
-                elif event.type == pygame.MOUSEBUTTONDOWN:
+                elif event.type in [pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN]:
                     mx,my = pygame.mouse.get_pos()
-                    if buttons[0].collidepoint(mx,my): # Play
+                    if buttons[0].collidepoint(mx,my) or (event.key == (pygame.K_1 if save is None else pygame.K_2)): # Play
                         color = 1
                         MOVE = None
                         save = None
                         result = -1
+                        botplay = None
                         board.setup()
                         menu, match = False, True
-                    elif buttons[1].collidepoint(mx,my): # Play vs bot
-                        print("PLAY VS BOT")
-                    elif buttons[2].collidepoint(mx,my): # Load board
+                    elif buttons[1].collidepoint(mx,my) or (event.key == (pygame.K_2 if save is None else pygame.K_3)): # Play vs bot
+                        menu = False
+                        difficulty = board.drawbot()
+                        logic = 0
+                        while True:
+                            for event in pygame.event.get():
+                                if event.type == pygame.QUIT:
+                                    if LOGS: pprint("Quitting...")
+                                    pygame.quit()
+                                    running = False
+                                    logic = 100
+                                elif event.type == pygame.KEYDOWN:
+                                    if event.key == pygame.K_1:
+                                        logic = 3
+                                    elif event.key in [pygame.K_2,pygame.K_SPACE]:
+                                        logic = 1
+                                    elif event.key == pygame.K_3:
+                                        logic = 2
+                                    elif event.key == pygame.K_ESCAPE:
+                                        logic = 100
+                                        menu = True
+                                        board.drawmenu((white,black),cont = save)
+                                elif event.type == pygame.MOUSEBUTTONDOWN:
+                                    mx,my = pygame.mouse.get_pos()
+                                    if difficulty[0].collidepoint(mx,my): # Easy
+                                        logic = 3
+                                    elif difficulty[1].collidepoint(mx,my): # Medium
+                                        logic = 1
+                                    elif difficulty[2].collidepoint(mx,my): # Hard
+                                        logic = 2
+                            if logic != 0: break
+                        if not running or menu: break
+                        difficulty = board.drawbot(col=True)
+                        col = -1
+                        while True:
+                            for event in pygame.event.get():
+                                if event.type == pygame.QUIT:
+                                    if LOGS: pprint("Quitting...")
+                                    pygame.quit()
+                                    running = False
+                                    col = 100
+                                elif event.type == pygame.KEYDOWN:
+                                    if event.key in [pygame.K_1,pygame.K_SPACE]:
+                                        col = 0
+                                    elif event.key == pygame.K_2:
+                                        col = 1
+                                    elif event.key == pygame.K_3:
+                                        col = randint(0,1)
+                                    elif event.key == pygame.K_ESCAPE:
+                                        col = 100
+                                        menu = True
+                                        board.drawmenu((white,black),cont = save)
+                                elif event.type == pygame.MOUSEBUTTONDOWN:
+                                    mx,my = pygame.mouse.get_pos()
+                                    if difficulty[0].collidepoint(mx,my): # White
+                                        col = 0
+                                    elif difficulty[1].collidepoint(mx,my): # Black
+                                        col = 1
+                                    elif difficulty[2].collidepoint(mx,my): # Random
+                                        col = randint(0,1)
+                            if col != -1: break
+                        if not running or menu: break
+                        color = 1
+                        MOVE = None
+                        save = None
+                        result = -1
+                        botplay = (col,logic)
+                        board.setup()
+                        match = True
+                    elif buttons[2].collidepoint(mx,my) or (event.key == (pygame.K_3 if save is None else pygame.K_4)): # Load board
                         print("LOAD")
-                    elif buttons[3].collidepoint(mx,my): # Settings
+                    elif buttons[3].collidepoint(mx,my) or (event.key == (pygame.K_4 if save is None else pygame.K_5)): # Settings
                         print("SETTINGS")
-                    elif buttons[4].collidepoint(mx,my): # Quit
+                    elif buttons[4].collidepoint(mx,my) or event.key == pygame.K_ESCAPE or (event.key == (pygame.K_5 if save is None else pygame.K_6)): # Quit
                         if LOGS: pprint("Quitting...")
                         menu, running = False, False
                         pygame.quit()
-                    elif save is not None and buttons[5].collidepoint(mx,my): # Continue
+                    elif save is not None and (buttons[5].collidepoint(mx,my) or event.key == pygame.K_1): # Continue
                         color = save[0]
                         MOVE = None
                         menu, match = False, True
@@ -1277,6 +1376,9 @@ def pyloop():
                 turn = False
                 outcome = save[1]
                 save = None
+            if botplay is not None and botplay[0] == color:
+                turn = False
+                MOVE = board.ai(*botplay)
             while turn:
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
@@ -1350,16 +1452,22 @@ def pyloop():
                         board.win.blit(p,center)
                         pygame.display.update()
             if not match: break
-            if COLOROVERRIDE and not outcome:
-                outcome = board.handle_turn(MOVE, color)
-                if not outcome: outcome = board.handle_turn(MOVE, int(not color))
-            elif not outcome:
-                outcome = board.handle_turn(MOVE, color)
+            if MOVE is not None and not outcome:
+                if COLOROVERRIDE:
+                    outcome = board.handle_turn(MOVE, color)
+                    if not outcome: outcome = board.handle_turn(MOVE, int(not color))
+                else:
+                    outcome = board.handle_turn(MOVE, color)
             if isinstance(outcome, str): # Pawn promotion
-                board.draw()
-                squares = board.drawpromo(square)
-                pygame.display.update()
-                prompting = True
+                if botplay is not None and botplay[0] == color:
+                    options = ['bishop','knight'] if botplay[1] == 3 else ['knight','bishop','rook','queen'] if botplay == 1 else ['queen']
+                    promo = choice(options)
+                    prompting = False
+                else:
+                    board.draw()
+                    squares = board.drawpromo(square)
+                    pygame.display.update()
+                    prompting = True
                 if LOGS: print(f"{"White" if color == 1 else "Black"} promoting pawn on {outcome}.\n(Q/Space = Queen | N = Knight | R = Rook | B = Bishop)")
                 while prompting:
                     promo = None
@@ -1404,6 +1512,8 @@ def pyloop():
                 if LOGS: print(f"[bold]Stalemate![/bold]")
                 result = -1
                 total += 1
+                match, menu = False, True
+                endscreen = True
             if board.checkmate(color):
                 if LOGS: print(f"\n[bold]Checkmate![/bold] {f"[{WHITE}]White[/{WHITE}]" if color==0 else f"[{BLACK}]Black[/{BLACK}]"} has won.")
                 result = int(not color)
@@ -1425,10 +1535,17 @@ def pyloop():
                     mx,my = pygame.mouse.get_pos()
                     if buttons[0].collidepoint(mx,my): # Play again
                         endscreen, menu, match = False, False, True
+                        color = 1
+                        MOVE = None
+                        save = None
+                        result = -1
+                        botplay = (col,logic)
+                        board.setup()
+                        match = True
                     elif buttons[1].collidepoint(mx,my): # Menu
                         endscreen, menu = False, True
 
-#TODO: Change settings to keybind help (?), admin options (move opponent pieces, set up board), finish initial screen, turn indicator, timer, custom pieces...
+#TODO: Change settings to keybind help (?), admin options (move opponent pieces, set up board), finish initial screen, surrender, turn indicator, timer, custom pieces...
 
 if __name__ == '__main__':
     # superloop()
