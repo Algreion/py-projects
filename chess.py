@@ -997,10 +997,11 @@ def superloop():
 pygame.font.init()
 
 WIDTH, HEIGHT = 800,800
-GAPX,GAPY = 10, 10
-BG = (45, 34, 24)
+GAPX,GAPY = 15,15
+BG = (45,34,24)
 LIGHT = (240, 217, 181)
 DARK = (181, 136, 99)
+SWAPPING = False
 BORDER = True
 SQUAREBORDER_COLOR = (45, 34, 24)
 SQUAREBORDER_WIDTH = 1
@@ -1029,6 +1030,8 @@ ENDBUTTONSFONT = (0,0,0)
 WIDTH -= (WIDTH-2*GAPX)%8
 HEIGHT -= (HEIGHT-2*GAPY)%8
 BOARDW,BOARDH = WIDTH-2*GAPX,HEIGHT-2*GAPY
+WBG = WHITEPIECE
+BBG = BLACKPIECE
 
 class PyBoard(Board):
     def __init__(self, win, filled: bool = False):
@@ -1041,9 +1044,10 @@ class PyBoard(Board):
         self.menuoptionfont = pygame.sysfont.SysFont("arial",min(WIDTH,HEIGHT)//15)
         self.font = pygame.sysfont.SysFont("verdana",min(WIDTH,HEIGHT)//30)
         self.swapped = False
-    def draw(self, update: bool = False): # Still need to add info (letters/numbers)
+    def draw(self, update: bool = False, col: int = 1):
         """Renders the full board."""
-        self.win.fill(BG)
+        c = BG if SWAPPING else (WBG if col else BBG)
+        self.win.fill(c)
         for h in range(8):
             for w in range(8):
                 self.drawsquare((w,h))
@@ -1084,7 +1088,7 @@ class PyBoard(Board):
         surf.center = center
         pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
         buttons.append(surf)
-        i = self.menuoptionfont.render("SETTINGS", True, MENUFONT)
+        i = self.menuoptionfont.render("HELP", True, MENUFONT)
         surf = i.get_rect(center=(WIDTH//2,(7+H)*HEIGHT//10))
         self.win.blit(i, surf)
         center, surf.width = surf.center, buttonwidth
@@ -1290,15 +1294,48 @@ class PyBoard(Board):
         buttons.append(surf)
         pygame.display.update()
         return buttons
+    def drawhelp(self) -> pygame.rect:
+        self.win.fill(MENUBG)
+        """# DONE:
+# S = SWAPPING
+# Q = RESIGN
+# D = DRAW
+# O = COLOROVERRIDE
+# L = LOCKTURN
+# R = RANDOMMOVE
+# T = RANDOMCAPTURE
+# A = Toggle admin (menu)
+# C = LOGS (menu)
+# K = KILL PIECE
+# M = Move highlighted
+# I = Insert piece (Q/R/B/N/P)
+# 0/1 = Convert piece
+# G = Save board"""
+        text = "Menu Keybinds:\nA = Toggle Admin\nC = Toggle Console Logs\n\nMatch Keybinds:\nS = Toggle board swapping\nQ = Resign | D = Offer draw\nEscape = Menu"
+        text += "\n\nAdmin:\nO = Override color | L = Lock turn | R = Random move\nT = Random capture (if available)\nK = Delete piece | M = Move highlighted\n0/1 = Convert piece to black/white\nI = Insert piece (Press Q/R/B/N/P)\nG = Save board"
+        y = HEIGHT//20
+        for line in text.splitlines():
+            i = self.font.render(line, True, MENUFONT)
+            surf = i.get_rect(center=(WIDTH//2,y))
+            self.win.blit(i, surf)
+            y += HEIGHT//18
+        i = self.menuoptionfont.render("BACK", True, MENUFONT)
+        surf = i.get_rect(center=(WIDTH//10,9.5*HEIGHT//10))
+        text = surf.copy()
+        center = surf.center
+        surf.center = center
+        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(WIDTH//40, HEIGHT//40), 1)
+        self.win.blit(i, text)
+        pygame.display.update()
+        return surf
 def pyloop():
-    global ADMIN,LOGS
+    global ADMIN,LOGS,SWAPPING
     window = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("PyChess")
     board = PyBoard(window)
     running = True
     color = 1
     MOVE = None
-    SWAPPING = False
     COLOROVERRIDE = False
     LOCKTURN = False
     white, black, total = 0, 0, 0
@@ -1315,7 +1352,7 @@ def pyloop():
                 if event.type == pygame.QUIT:
                     if LOGS: pprint("Quitting...")
                     pygame.quit()
-                    menu, running = False, False
+                    return
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_a:
                         ADMIN = not ADMIN
@@ -1324,10 +1361,10 @@ def pyloop():
                     elif event.key == pygame.K_c:
                         LOGS = not LOGS
                         print(f"LOGS toggled {"ON" if LOGS else "OFF"}")
-                    elif event.key == pygame.K_ESCAPE:
+                    elif event.key in [pygame.K_ESCAPE,pygame.K_q]:
                         if LOGS: pprint("Quitting...")
                         pygame.quit()
-                        menu, running = False, False
+                        return
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     mx,my = pygame.mouse.get_pos()
                     if buttons[0].collidepoint(mx,my): # Play
@@ -1410,16 +1447,25 @@ def pyloop():
                     elif buttons[2].collidepoint(mx,my): # Load board
                         x = board.load()
                         if not x:
-                            if LOGS: print("Unable to load 'board.txt'.")
+                            print("Unable to load 'board.txt'.")
                             continue
                         if isinstance(x,list): color = int(x[0])
                         else: color = 1
-                        print(x,color)
                         MOVE, save = None, None
                         result = -1
                         menu, match = False, True
-                    elif buttons[3].collidepoint(mx,my): # Settings
-                        print("SETTINGS")
+                    elif buttons[3].collidepoint(mx,my): # Help
+                        back = board.drawhelp()
+                        done = False
+                        while not done:
+                            for event in pygame.event.get():
+                                if event.type == pygame.QUIT:
+                                    if LOGS: pprint("Quitting...")
+                                    pygame.quit()
+                                    return
+                                elif event.type == pygame.MOUSEBUTTONDOWN and back.collidepoint(*pygame.mouse.get_pos()): done = True
+                                elif event.type == pygame.KEYDOWN and event.key in [pygame.K_ESCAPE,pygame.K_q,pygame.K_x]: done = True
+                        board.drawmenu((white,black),cont = save)
                     elif buttons[4].collidepoint(mx,my): # Quit
                         if LOGS: pprint("Quitting...")
                         menu, running = False, False
@@ -1441,7 +1487,6 @@ def pyloop():
             outcome = False
             forceres = None
             asked_draw = False
-            board.draw(update=True)
             if save is not None and len(save)>1 and isinstance(save[1],str):
                 turn = False
                 outcome = save[1]
@@ -1449,6 +1494,8 @@ def pyloop():
             if botplay is not None and botplay[0] == color:
                 turn = False
                 MOVE = board.ai(*botplay)
+            else:
+                board.draw(update=True,col=color)
             while turn:
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
@@ -1464,7 +1511,7 @@ def pyloop():
                         elif event.key == pygame.K_s:
                             SWAPPING = not SWAPPING
                             board.swapped = SWAPPING and not bool(color)
-                            board.draw(update=True)
+                            board.draw(update=True,col=color)
                             if LOGS: print(f"Swapping toggled {"ON" if SWAPPING else 'OFF'}.")
                         elif event.key == pygame.K_o and ADMIN:
                             COLOROVERRIDE = not COLOROVERRIDE
@@ -1472,6 +1519,9 @@ def pyloop():
                         elif event.key == pygame.K_l and ADMIN:
                             LOCKTURN = not LOCKTURN
                             if LOGS: print("Locked turn." if LOCKTURN else "Unlocked turn.")
+                        elif event.key == pygame.K_g and ADMIN:
+                            board.save(stats=[color,int(INFO),int(SWAPPING)])
+                            print("Board saved to 'board.txt'.")
                         elif event.key == pygame.K_r and ADMIN:
                             turn = False
                             MOVE = board.ai(color)
@@ -1488,26 +1538,26 @@ def pyloop():
                                 p = board.lookup(square)
                                 if p is not None and p.type != 'king':
                                     del board[square]
-                            board.draw(update=True)
+                            board.draw(update=True,col=color)
                         elif event.key == pygame.K_1 and ADMIN:
                             square = board.getsquare(pygame.mouse.get_pos())
                             if square is not None:
                                 p = board.lookup(square)
                                 if p is not None and p.color != 1 and p.type != 'king':
                                     board.setpiece(square,p.type,1)
-                                    board.draw(update=True)
+                                    board.draw(update=True,col=color)
                         elif event.key == pygame.K_0 and ADMIN:
                             square = board.getsquare(pygame.mouse.get_pos())
                             if square is not None:
                                 p = board.lookup(square)
                                 if p is not None and p.color != 0 and p.type != 'king':
                                     board.setpiece(square,p.type,0)
-                                    board.draw(update=True)
+                                    board.draw(update=True,col=color)
                         elif event.key == pygame.K_m and ADMIN and highlighted is not None:
                             square = board.getsquare(pygame.mouse.get_pos())
                             if square is not None:
                                 board.move(highlighted, square)
-                                board.draw(update=True)
+                                board.draw(update=True,col=color)
                         elif event.key == pygame.K_i and ADMIN:
                             square = board.getsquare(pygame.mouse.get_pos())
                             if square is not None and board.lookup(square) is None:
@@ -1529,7 +1579,7 @@ def pyloop():
                                             elif event.key in [pygame.K_i,pygame.K_ESCAPE]: piece = ''
                                     if piece is not None: break
                                 if piece: board.setpiece(square,piece,color)
-                                board.draw(update=True)
+                                board.draw(update=True,col=color)
                         elif event.key == pygame.K_q:
                             btns = board.drawsurr(color)
                             choice = 0
@@ -1550,7 +1600,7 @@ def pyloop():
                             if choice == 1:
                                 forceres = int(not color)
                                 turn = False
-                            else: board.draw(update=True)
+                            else: board.draw(update=True,col=color)
                         elif event.key == pygame.K_d and botplay is None and not asked_draw:
                             btns = board.drawsurr(color, draw=True)
                             choice = 0
@@ -1572,11 +1622,11 @@ def pyloop():
                             if choice == 1:
                                 forceres = -1
                                 turn = False
-                            else: board.draw(update=True)
+                            else: board.draw(update=True,col=color)
                     elif event.type == pygame.MOUSEBUTTONDOWN and pygame.mouse.get_pressed()[0]: # Left click
                         pos = pygame.mouse.get_pos()
                         square = board.getsquare(pos)
-                        board.draw()
+                        board.draw(col=color)
                         if square in optionsTriggers: # Handleturn
                             turn = False
                             if 'castle' in options and square in [(6,0),(6,7)]: MOVE = 'castle'
@@ -1604,7 +1654,7 @@ def pyloop():
                             lastselect = (-1,-1)
                             highlighted = None
                             options,captureoptions,optionsTriggers = [],[],[]
-                            board.draw(update=True)
+                            board.draw(update=True,col=color)
                         if dragging:
                             dragging = False
                             if square in optionsTriggers: # Handleturn
@@ -1613,7 +1663,7 @@ def pyloop():
                                 elif 'longcastle' in options and square in [(1,0),(1,7)]: MOVE = 'longcastle'
                                 else: MOVE = f"{board.code(highlighted)} {board.code(square)}"
                                 break
-                            board.draw()
+                            board.draw(col=color)
                             if highlighted is not None:
                                 board.drawsquare(location=highlighted,highlight=True)
                                 board.drawoptions(highlighted,options,captureoptions)
@@ -1621,7 +1671,7 @@ def pyloop():
                     elif pygame.mouse.get_pressed()[0] and highlighted is not None and board[highlighted] is not None and dragging:
                         pos = pygame.mouse.get_pos()
                         currsquare = board.getsquare(pos)
-                        board.draw()
+                        board.draw(col=color)
                         if square is not None:
                             board.drawsquare(square,highlight=True,piece=False)
                             board.drawoptions(square,options,captureoptions)
@@ -1646,7 +1696,7 @@ def pyloop():
                     promo = choice(options)
                     prompting = False
                 else:
-                    board.draw()
+                    board.draw(col=color)
                     squares = board.drawpromo(square)
                     pygame.display.update()
                     prompting = True
@@ -1728,25 +1778,8 @@ def pyloop():
                     elif buttons[1].collidepoint(mx,my): # Menu
                         endscreen, menu = False, True
 
-# DONE:
-# S = SWAPPING
-# Q = RESIGN
-# D = DRAW
-# O = COLOROVERRIDE
-# L = LOCKTURN
-# R = RANDOMMOVE
-# T = RANDOMCAPTURE
-# A = Toggle admin (menu)
-# C = LOGS (menu)
-# K = KILL PIECE
-# M = Move highlighted
-# I = Insert piece (Q/R/B/N/P)
-# 0/1 = Convert piece
-
 #TODO
-# turn indicator
 # Custom Pieces
-# Menu settings, or change to keybind help
 
 if __name__ == '__main__':
     # superloop()
