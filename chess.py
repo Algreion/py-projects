@@ -9,7 +9,7 @@ BLACK = 'cyan'
 WHITE = 'cornsilk1'
 EMPTY = 'bold'
 
-LOGS = True
+LOGS = False
 SEP = "_______________________________"
 
 ADMIN = True
@@ -58,8 +58,16 @@ class Board:
         x,y = self.ind(notation)
         self.board[y][x] = item
     def __delitem__(self, notation: str | tuple):
-        x,y = self.ind(notation)
-        self.board[y][x] = None
+        p = self.lookup(notation)
+        if p is not None:
+            n = self.code(notation)
+            self[n] = None
+            m = self.whitemoved if p.color == 1 else self.blackmoved
+            if p.type == 'king':
+                m = [True,True,True]
+            elif p.type == 'rook':
+                if n in ['h1','h8']: m[2] = True
+                elif n in ['a1','a8']: m[0] = True
     def view(self, color: int = 1, info: bool = True) -> None:
         """Prints the board."""
         print(self.show(color, info, RICH))
@@ -249,6 +257,7 @@ class Board:
         if (self.W,self.H) != (8,8): return False
         self.whitemoved = [False,False,False]
         self.blackmoved = [False,False,False]
+        self.white_captured, self.black_captured = set(),set()
         self.white_king = 'e1'
         self.black_king = 'e8'
         def P(type, color): return Piece(type, color, self)
@@ -473,7 +482,7 @@ class Board:
                 print("Square is empty.")
                 return False
             elif self.lookup(move).color != color:
-                print("Piece belongs to opponent.")
+                if LOGS: print("Piece belongs to opponent.")
                 return False
             A,B = self.convert(self.move_options(move,CHECK=True,CASTLING=True)), self.convert(self.capture_options(move,CHECK=True))
             print(f"Move options: {A} ({len(A)})")
@@ -491,7 +500,7 @@ class Board:
                 print("Square is empty.")
                 return False
             elif self.lookup(moveA).color != color:
-                print("Piece belongs to opponent.")
+                if LOGS: print("Piece belongs to opponent.")
                 return False
             opt, cap = self.move_options(moveA,CHECK=True), self.capture_options(moveA,CHECK=True)
             if self.ind(moveB) in opt:
@@ -1097,6 +1106,11 @@ class PyBoard(Board):
             surf.center = center
             pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
             buttons.append(surf)
+        i = self.font.render("By Algreion", True, MENUFONT)
+        self.win.blit(i, i.get_rect(center=(WIDTH-i.get_width()//1.5,9.5*HEIGHT//10)))
+        if ADMIN:
+            i = self.font.render("Admin Mode", True, (255,0,0))
+            self.win.blit(i, i.get_rect(center=(WIDTH-i.get_width()//1.5,0.5*HEIGHT//10)))
         if update: pygame.display.update()
         return buttons
     def drawend(self, result: int) -> list:
@@ -1246,6 +1260,7 @@ class PyBoard(Board):
         pygame.display.update()
         return buttons
 def pyloop():
+    global ADMIN,LOGS
     window = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("PyChess")
     board = PyBoard(window)
@@ -1269,9 +1284,21 @@ def pyloop():
                     if LOGS: pprint("Quitting...")
                     pygame.quit()
                     menu, running = False, False
-                elif event.type in [pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN]:
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_a:
+                        ADMIN = not ADMIN
+                        if LOGS: print(f"ADMIN toggled {"ON" if ADMIN else "OFF"}")
+                        board.drawmenu((white,black),cont = save)
+                    elif event.key == pygame.K_c:
+                        LOGS = not LOGS
+                        print(f"LOGS toggled {"ON" if LOGS else "OFF"}")
+                    elif event.key == pygame.K_ESCAPE:
+                        if LOGS: pprint("Quitting...")
+                        pygame.quit()
+                        menu, running = False, False
+                elif event.type == pygame.MOUSEBUTTONDOWN:
                     mx,my = pygame.mouse.get_pos()
-                    if buttons[0].collidepoint(mx,my) or (event.key == (pygame.K_1 if save is None else pygame.K_2)): # Play
+                    if buttons[0].collidepoint(mx,my): # Play
                         color = 1
                         MOVE = None
                         save = None
@@ -1279,7 +1306,7 @@ def pyloop():
                         botplay = None
                         board.setup()
                         menu, match = False, True
-                    elif buttons[1].collidepoint(mx,my) or (event.key == (pygame.K_2 if save is None else pygame.K_3)): # Play vs bot
+                    elif buttons[1].collidepoint(mx,my): # Play vs bot
                         menu = False
                         difficulty = board.drawbot()
                         logic = 0
@@ -1290,7 +1317,7 @@ def pyloop():
                                     pygame.quit()
                                     running = False
                                     logic = 100
-                                elif event.type == pygame.KEYDOWN:
+                                elif event.type == event.type==pygame.KEYDOWN:
                                     if event.key == pygame.K_1:
                                         logic = 3
                                     elif event.key in [pygame.K_2,pygame.K_SPACE]:
@@ -1320,7 +1347,7 @@ def pyloop():
                                     pygame.quit()
                                     running = False
                                     col = 100
-                                elif event.type == pygame.KEYDOWN:
+                                elif event.type == event.type==pygame.KEYDOWN:
                                     if event.key in [pygame.K_1,pygame.K_SPACE]:
                                         col = 0
                                     elif event.key == pygame.K_2:
@@ -1348,15 +1375,24 @@ def pyloop():
                         botplay = (col,logic)
                         board.setup()
                         match = True
-                    elif buttons[2].collidepoint(mx,my) or (event.key == (pygame.K_3 if save is None else pygame.K_4)): # Load board
-                        print("LOAD")
-                    elif buttons[3].collidepoint(mx,my) or (event.key == (pygame.K_4 if save is None else pygame.K_5)): # Settings
+                    elif buttons[2].collidepoint(mx,my): # Load board
+                        x = board.load()
+                        if not x:
+                            if LOGS: print("Unable to load 'board.txt'.")
+                            continue
+                        if isinstance(x,list): color = int(x[0])
+                        else: color = 1
+                        print(x,color)
+                        MOVE, save = None, None
+                        result = -1
+                        menu, match = False, True
+                    elif buttons[3].collidepoint(mx,my): # Settings
                         print("SETTINGS")
-                    elif buttons[4].collidepoint(mx,my) or event.key == pygame.K_ESCAPE or (event.key == (pygame.K_5 if save is None else pygame.K_6)): # Quit
+                    elif buttons[4].collidepoint(mx,my): # Quit
                         if LOGS: pprint("Quitting...")
                         menu, running = False, False
                         pygame.quit()
-                    elif save is not None and (buttons[5].collidepoint(mx,my) or event.key == pygame.K_1): # Continue
+                    elif save is not None and buttons[5].collidepoint(mx,my): # Continue
                         color = save[0]
                         MOVE = None
                         menu, match = False, True
@@ -1391,6 +1427,32 @@ def pyloop():
                             menu = True
                             save = (color,)
                             break
+                        elif event.key == pygame.K_s:
+                            SWAPPING = not SWAPPING
+                            board.swapped = SWAPPING and not bool(color)
+                            board.draw(update=True)
+                            if LOGS: print(f"Swapping toggled {"ON" if SWAPPING else 'OFF'}.")
+                        elif event.key == pygame.K_o and ADMIN:
+                            COLOROVERRIDE = not COLOROVERRIDE
+                            if LOGS: print(f"Override toggled {"ON" if COLOROVERRIDE else 'OFF'}.")
+                        elif event.key == pygame.K_l and ADMIN:
+                            LOCKTURN = not LOCKTURN
+                            if LOGS: print("Locked turn." if LOCKTURN else "Unlocked turn.")
+                        elif event.key == pygame.K_r and ADMIN:
+                            turn = False
+                            MOVE = board.ai(color)
+                            square = MOVE[-2:]
+                            break
+                        elif event.key == pygame.K_t and ADMIN:
+                            turn = False
+                            MOVE = board.ai(color,2)
+                            square = MOVE[-2:]
+                            break
+                        elif event.key == pygame.K_k and ADMIN:
+                            square = board.getsquare(pygame.mouse.get_pos())
+                            if square is not None:
+                                del board[square]
+                            board.draw(update=True)
                     elif event.type == pygame.MOUSEBUTTONDOWN and pygame.mouse.get_pressed()[0]: # Left click
                         pos = pygame.mouse.get_pos()
                         square = board.getsquare(pos)
@@ -1443,7 +1505,7 @@ def pyloop():
                         if square is not None:
                             board.drawsquare(square,highlight=True,piece=False)
                             board.drawoptions(square,options,captureoptions)
-                        if currsquare is not None: 
+                        if currsquare is not None:
                             if currsquare == square: board.drawsquare(currsquare,hl2=True, piece=False)
                             else: board.drawsquare(currsquare,hl2=True)
                         p = board[highlighted]
@@ -1508,7 +1570,7 @@ def pyloop():
             if not LOCKTURN: 
                 color = int(not color)
                 if SWAPPING: board.swapped = not board.swapped
-            if board.stalemate(color) or board.drawmate():
+            if board.stalemate(color) or board.drawmate() or any([k=='king' for k in [p.type for p in board.white_captured.union(board.black_captured)]]):
                 if LOGS: print(f"[bold]Stalemate![/bold]")
                 result = -1
                 total += 1
@@ -1539,13 +1601,28 @@ def pyloop():
                         MOVE = None
                         save = None
                         result = -1
-                        botplay = (col,logic)
                         board.setup()
                         match = True
                     elif buttons[1].collidepoint(mx,my): # Menu
                         endscreen, menu = False, True
 
-#TODO: Change settings to keybind help (?), admin options (move opponent pieces, set up board), finish initial screen, surrender, turn indicator, timer, custom pieces...
+# DONE:
+# S = SWAPPING
+# O = COLOROVERRIDE
+# L = LOCKTURN
+# R = RANDOMMOVE
+# T = RANDOMCAPTURE
+# A = Toggle admin (menu)
+# C = LOGS (menu)
+# K = KILL PIECE
+
+#TODO
+# Q = SURRENDER
+# D = DRAW
+# I = INSERT PIECE
+# turn indicator
+# Custom Pieces
+# Menu settings, or change to keybind help
 
 if __name__ == '__main__':
     # superloop()
