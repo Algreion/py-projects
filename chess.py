@@ -1,9 +1,9 @@
 # Terminal: superloop() | Interactive: pyloop()
+TERMINAL = False
 
 pprint = print
 from rich import print
-from random import choice,randint
-import os,pygame
+import os,pygame,requests,random
 
 RICH = True
 BLACK = 'cyan'
@@ -15,6 +15,17 @@ SEP = "_______________________________"
 
 ADMIN = True
 DEBUGGING = False
+TIMEOUT = 3 # Seconds for API request
+HISTORY = True
+
+def api(fen: str, ev: bool = False, json: bool = False) -> str:
+    """Sends FEN board to API and returns best move. ev=True returns eval."""
+    try:
+        r = requests.post("https://chess-api.com/v1",json={'fen': fen},timeout=TIMEOUT)
+        r.raise_for_status()
+        r = r.json()
+        return r if json else r.get('eval') if ev else r.get("lan")
+    except: return ''
 
 class Board:
     def __init__(self, N: tuple = (8,8), filled: bool = False, type: str | None = 'Chess'):
@@ -32,8 +43,11 @@ class Board:
         self.white_king = None
         self.black_king = None
         self.default = self.implicit
+        self.fullmoves = 1
         self.white_enpassant,self.black_enpassant = None, None
         self.white_captured,self.black_captured = set(),set()
+        self.history = ''
+        self.fullhistory = ''
         self.move_dict = {
         "king":    [(1,0), (-1,0), (0,1), (0,-1),
                     (1,1), (1,-1), (-1,1), (-1,-1)],
@@ -246,6 +260,8 @@ class Board:
     def setup(self) -> bool:
         """Sets up board with correct pieces."""
         self.clear()
+        self.history = ''
+        self.fullmoves = 1
         if (self.W,self.H) != (8,8): return False
         self.whitemoved = [False,False,False]
         self.blackmoved = [False,False,False]
@@ -428,23 +444,65 @@ class Board:
         """Returns a move based on chosen logic. Returns None if no available moves.
         Logic 1: Completely random.
         Logic 2: Prefers captures. Still random.
-        Logic 3: Avoids captures at all costs."""
+        Logic 3: Avoids captures at all costs.
+        Logic 4: Chess API."""
         match logic:
             case 1:
                 pool = self.all_moves(color)
                 pool = pool[0]+pool[1]
                 if not pool: return None
-                return choice(pool)
+                return random.choice(pool)
             case 2:
                 pool = self.all_moves(color)
-                if pool[1]: return choice(pool[1])
+                if pool[1]: return random.choice(pool[1])
                 if not pool[0]: return None
-                return choice(pool[0])
-            case _:
+                return random.choice(pool[0])
+            case 3:
                 pool = self.all_moves(color)
-                if pool[0]: return choice(pool[0])
+                if pool[0]: return random.choice(pool[0])
                 if not pool[1]: return None
-                return choice(pool[1])
+                return random.choice(pool[1])
+            case _:
+                fen = self.tofen(color)
+                move = api(fen)
+                move = self.fromfen(move)
+                if not move: move = self.ai(color,logic=2)
+                return move
+    def tofen(self, color: int) -> str:
+        """Returns FEN representation of board."""
+        rows = []
+        for h in range(8):
+            fen_row,empty = "",0
+            for w in range(8):
+                p = self[(w,h)]
+                sym = '' if p is None else p.simplified
+                if sym == "": empty += 1
+                else:
+                    if empty:
+                        fen_row += str(empty)
+                        empty = 0
+                    fen_row += sym
+            if empty:
+                fen_row += str(empty)
+            rows.append(fen_row)
+        castles = ''
+        if not any(self.whitemoved[1:]): castles += 'K'
+        if not any(self.whitemoved[:2]): castles+='Q'
+        if not any(self.blackmoved[1:]): castles += 'k'
+        if not any(self.blackmoved[:2]): castles+='q'
+        if not castles: castles = '-'
+        enp = '-'
+        if color == 1 and self.black_enpassant is not None and self.black_enpassant in self.all_moves(1,capturesOnly=True)[1]: enp = self.black_enpassant
+        elif color == 0 and self.white_enpassant is not None and self.white_captured in self.all_moves(0,capturesOnly=True)[1]: enp = self.white_enpassant
+        return "/".join(rows[::-1])+f' {'w' if color==1 else 'b'} {castles} {self.code(enp)} 0 {self.fullmoves}'
+    def fromfen(self, move: str) -> str:
+        """Converts API move to my format."""
+        if not move: return ''
+        try:
+            if move in ['e1g1','e8g8']: return 'castle'
+            elif move in ['e1c1','e8c8']: return 'longcastle'
+            else: return move[:2]+' '+move[2:4]
+        except: return ''
     def handle_turn(self, move: str, color: int) -> bool | str:
         """Handles game move with correct format. Returns True=break, False=continue, str=pawn promotion square."""
         global RICH,WHITE,BLACK,EMPTY,LOGS
@@ -455,12 +513,16 @@ class Board:
                 res = self.castle(color=color,long=False,commit=True)
                 if res: 
                     if LOGS: print("Castled.")
+                    if color == 0: self.fullmoves += 1
+                    if HISTORY: self.history += 'castle\n'
                     return True
                 else: return False
             elif move in ['cl','lc','longcastle']:
                 res = self.castle(color=color,long=True,commit=True)
                 if res: 
                     if LOGS: print("Castled queen side.")
+                    if color == 0: self.fullmoves += 1
+                    if HISTORY: self.history += 'longcastle\n'
                     return True
                 else: return False
             if ',' in move:
@@ -506,6 +568,8 @@ class Board:
                 else:
                     if color == 1: self.white_enpassant = None
                     else: self.black_enpassant = None
+                if color == 0: self.fullmoves+=1
+                if HISTORY: self.history += f"{moveA} {moveB}\n"
                 if self.checkpromo(moveB): return moveB
                 return True
             elif self.ind(moveB) in cap:
@@ -523,12 +587,36 @@ class Board:
                     self.whitemoved,self.blackmoved = self.helper_moved(moveA,self.whitemoved,self.blackmoved)
                     if LOGS: print(f"{self.lookup(moveB).type.capitalize()} captured {capt} on {self.code(moveB)}.")
                 self.white_enpassant,self.black_enpassant = None, None
+                if color == 0: self.fullmoves+=1
+                if HISTORY: self.history += f"{moveA} {moveB}\n"
                 if self.checkpromo(moveB): return moveB
                 return True
             else:
                 print("Invalid move. Try typing the piece to see available moves.")
         else:
             print("Unknown input. Type 'help' for info.")
+    def fromhistory(self, history: str, moves: int = 0) -> int:
+        """Loads board from history (format is self.history)"""
+        color = 1
+        history = history.splitlines()
+        self.setup()
+        if moves < 1: moves = len(history)
+        for i in range(moves):
+            m = history[i]
+            if m in ['queen','knight','rook','bishop']:
+                self.setpiece(history[i-1][3:],m,int(not color))
+                self.history += m+'\n'
+                continue
+            self.handle_turn(m,color)
+            color = int(not color)
+        return color
+    def undo(self, n: int = 1) -> int:
+        if not self.history:
+            self.setup()
+            return 1
+        if self.history.splitlines()[-n] in ['queen','bishop','rook','knight']: n += 1
+        his = '\n'.join(self.history.splitlines()[:-n])
+        return self.fromhistory(his)
     def helper_moved(self, move: str, whitemoved: list,blackmoved: list) -> tuple:
         """Returns (whitemoved, blackmoved)"""
         match move:
@@ -556,12 +644,12 @@ class Board:
             if isinstance(outcome,str):
                 match botlogic:
                     case 1: options = ['queen','bishop','rook','knight'] # Medium
-                    case 2: options = ['queen'] # Hard
                     case 3: options = ['bishop','knight'] # Easy
-                    case _: options = ['rook'] # Misc
-                promo = choice(options)
+                    case _: options = ['queen'] # Hard
+                promo = random.choice(options)
                 self.setpiece(outcome, name=promo)
                 if LOGS: print(f"{"WHITE" if color == 1 else "Black"} promoted pawn on {outcome} to a {promo.capitalize()}.")
+                if HISTORY: self.history += promo+'\n'
             return True
         print('\n'+self.show(reverse,bool(info),bool(RICH)))
         if self.checkcheck(color):
@@ -900,7 +988,7 @@ def superloop():
                     black += 1
                 total += 1
             case '2' | 'bot':
-                try: logic = input("Choose difficulty:\n1. Easy | 2. Medium | 3. Hard\n> ")
+                try: logic = input("Choose difficulty:\n1. Easy | 2. Medium | 3. Hard | 4. Impossible\n> ")
                 except:
                     print("Quitting...")
                     break
@@ -908,18 +996,19 @@ def superloop():
                     case '1': logic = 3 # No captures
                     case '2': logic = 1 # Random
                     case '3': logic = 2 # Captures
+                    case '4': logic = 4 # API
                     case 'q' | 'x':
                         print("Cancelled")
                         continue
                     case _:
-                        print("Invallid difficulty. Defaulting to medium.")
+                        print("Invalid difficulty. Defaulting to Medium.")
                         logic = 1
                 color = input("\nChoose your color, or leave blank to pick white:\n1. White | 2. Black | 3. Random\n> ")
                 match color:
                     case '1' | '': color = 0 # Color of bot
                     case '2': color = 1
                     case '3': 
-                        color = randint(0,1)
+                        color = random.randint(0,1)
                         pprint(f"Randomly assigned to {'White' if color == 0 else 'Black'}.")
                 diff = 'Easy' if logic == 3 else 'Medium' if logic == 1 else 'Hard'
                 board = Board(filled=True)
@@ -927,6 +1016,7 @@ def superloop():
                     if logic == 3: remark = "You just dashed the bot's hopes and dreams. Perhaps try a harder difficulty for a real challenge?"
                     elif logic == 1: remark = "You are officially better at chess than random chance. That puts you in the top 50% players... What do you mean that's not how statistics work?"
                     elif logic == 2: remark = "Good job! You just beat a bot at the level of Magnus Carlsen. You don't believe me? Well, it tried its best, and that's what counts."
+                    else: remark = "Incredible! You just beat a genuinely powerful chess AI. I'm very impressed."
                     print(f"[bold]Congratulations, you won against the Bot on {diff} difficulty![/bold]")
                     pprint(remark)
                     if color == 0: white += 1
@@ -936,6 +1026,7 @@ def superloop():
                     if logic == 3: remark = "That is... impressive, it should be impossible for it to win.\nYour chess skills are below zero, but I'm sure you have other talents!"
                     elif logic == 1: remark = "Fun fact, this bot plays completely at random. So don't feel bad for losing, there was a nonzero chance it played like a Grandmaster!"
                     elif logic == 2: remark = "Don't worry, you'll improve with practice. Perhaps try a lower difficulty?"
+                    else: remark = "This is a true AI bot, so losing to it is expected. Good attempt, however!"
                     print(f"You lost against the Bot on {diff} difficulty.")
                     pprint(remark)
                     if color == 0: black += 1
@@ -1017,6 +1108,7 @@ INFODARK = LIGHT
 INFOLIGHT = DARK
 MENUBG = (255,255,255)
 MENUFONT = (0,0,0)
+IMPOSSIBLE = (255,0,0)
 MENUBUTTONS = (0,0,0)
 ENDFONT = (0,200,255)
 ENDBUTTONS = (255,255,255)
@@ -1255,6 +1347,14 @@ class PyBoard(Board):
         surf.center = center
         pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
         buttons.append(surf)
+        if not col:
+            i = self.menuoptionfont.render("EXTREME", True, IMPOSSIBLE)
+            surf = i.get_rect(center=(WIDTH//2,7*HEIGHT//10))
+            self.win.blit(i, surf)
+            center, surf.width = surf.center, buttonwidth
+            surf.center = center
+            pygame.draw.rect(self.win, IMPOSSIBLE, surf.inflate(0, WIDTH//200), 1)
+            buttons.append(surf)
         pygame.display.update()
         return buttons
     def drawsurr(self, col: int, draw: bool = False) -> list:
@@ -1291,8 +1391,8 @@ class PyBoard(Board):
     def drawhelp(self) -> pygame.rect:
         """Renders keybind help screen. Returns 'back' button."""
         self.win.fill(MENUBG)
-        text = "Menu Keybinds:\nA = Toggle Admin\nC = Toggle Console Logs\n\nMatch Keybinds:\nS = Toggle board swapping | I = Toggle move info\nQ = Resign | D = Offer draw\nEscape = Menu"
-        text += "\n\nAdmin:\nO = Override color | L = Lock turn | R = Random move\nT = Random capture (if available)\nK = Delete piece | M = Move highlighted\n0/1 = Convert piece to black/white\nP = Add piece (Press Q/R/B/N/P)\nG = Save board"
+        text = "Menu Keybinds:\nA = Toggle Admin\nC = Toggle Console Logs\n\nMatch Keybinds:\nS = Toggle board swapping | I = Toggle move info\nQ = Resign | D = Offer draw | U = Undo | R = Redo\nEscape = Menu"
+        text += "\n\nAdmin:\nO = Override color | L = Lock turn | N = Random move\nB = Best move | E = eval | U/R = Undo/Redo (player)\nK = Delete piece | M = Move highlighted\n0/1 = Convert piece to black/white\nP = Add piece (Press Q/R/B/N/P)\nG = Save board | F = Print FEN"
         y = HEIGHT//20
         for line in text.splitlines():
             i = self.font.render(line, True, MENUFONT)
@@ -1311,7 +1411,7 @@ class PyBoard(Board):
 
 def pyloop():
     """Handles the entire interactive loop."""
-    global ADMIN,LOGS,SWAPPING
+    global ADMIN,LOGS,SWAPPING,HISTORY
     window = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("PyChess")
     board = PyBoard(window)
@@ -1357,6 +1457,7 @@ def pyloop():
                         botplay = None
                         board.setup()
                         menu, match = False, True
+                        HISTORY=True
                     elif buttons[1].collidepoint(mx,my): # Play vs bot
                         menu = False
                         difficulty = board.drawbot()
@@ -1374,6 +1475,8 @@ def pyloop():
                                         logic = 1
                                     elif event.key == pygame.K_3:
                                         logic = 2
+                                    elif event.key == pygame.K_4:
+                                        logic = 4
                                     elif event.key == pygame.K_ESCAPE:
                                         logic = 100
                                         menu = True
@@ -1386,6 +1489,8 @@ def pyloop():
                                         logic = 1
                                     elif difficulty[2].collidepoint(mx,my): # Hard
                                         logic = 2
+                                    elif difficulty[3].collidepoint(mx,my): # API
+                                        logic = 4
                             if logic != 0: break
                         if not running or menu: break
                         difficulty = board.drawbot(col=True)
@@ -1402,7 +1507,7 @@ def pyloop():
                                     elif event.key == pygame.K_2:
                                         col = 1
                                     elif event.key == pygame.K_3:
-                                        col = randint(0,1)
+                                        col = random.randint(0,1)
                                     elif event.key == pygame.K_ESCAPE:
                                         col = 100
                                         menu = True
@@ -1414,7 +1519,7 @@ def pyloop():
                                     elif difficulty[1].collidepoint(mx,my): # Black
                                         col = 1
                                     elif difficulty[2].collidepoint(mx,my): # Random
-                                        col = randint(0,1)
+                                        col = random.randint(0,1)
                             if col != -1: break
                         if not running or menu: break
                         color = 1
@@ -1422,10 +1527,11 @@ def pyloop():
                         save = None
                         result = -1
                         botplay = (col,logic)
+                        HISTORY = True
                         board.setup()
                         match = True
-                        if col == 1: SWAPPING = True
                     elif buttons[2].collidepoint(mx,my): # Load board
+                        HISTORY = False
                         x = board.load()
                         if not x:
                             print("Unable to load 'board.txt'.")
@@ -1469,13 +1575,18 @@ def pyloop():
             optionsTriggers = []
             outcome = False
             forceres = None
+            cont = False
             asked_draw = False
+            if botplay is not None:
+                SWAPPING = False
+                board.swapped = botplay[0] == 1
             if save is not None and len(save)>1 and isinstance(save[1],str):
                 turn = False
                 outcome = save[1]
                 save = None
             if botplay is not None and botplay[0] == color:
                 turn = False
+                if botplay[1] == 4: board.draw(update=True,col=color)
                 MOVE = board.ai(*botplay)
             else:
                 board.draw(update=True,col=color)
@@ -1491,7 +1602,7 @@ def pyloop():
                             menu = True
                             save = (color,)
                             break
-                        elif event.key == pygame.K_s:
+                        elif event.key == pygame.K_s and botplay is None:
                             SWAPPING = not SWAPPING
                             board.swapped = SWAPPING and not bool(color)
                             board.draw(update=True,col=color)
@@ -1499,37 +1610,44 @@ def pyloop():
                         elif event.key == pygame.K_i:
                             board.info = not board.info
                             if LOGS: print(f"Info toggled {"ON" if board.info else "OFF"}.")        
+                        elif event.key == pygame.K_f and ADMIN:
+                            print(board.tofen(color))
                         elif event.key == pygame.K_o and ADMIN:
                             COLOROVERRIDE = not COLOROVERRIDE
                             if LOGS: print(f"Override toggled {"ON" if COLOROVERRIDE else 'OFF'}.")
                         elif event.key == pygame.K_l and ADMIN:
+                            HISTORY = False
                             LOCKTURN = not LOCKTURN
                             if LOGS: print("Locked turn." if LOCKTURN else "Unlocked turn.")
                         elif event.key == pygame.K_g and ADMIN:
                             board.save(stats=[color,int(INFO),int(SWAPPING)])
                             print("Board saved to 'board.txt'.")
-                        elif event.key == pygame.K_r and ADMIN:
+                        elif event.key == pygame.K_n and ADMIN:
                             turn = False
                             MOVE = board.ai(color)
                             square = MOVE[-2:]
                             break
-                        elif event.key == pygame.K_t and ADMIN:
+                        elif event.key == pygame.K_b and ADMIN:
                             turn = False
-                            MOVE = board.ai(color,2)
+                            MOVE = board.ai(color,logic=4)
                             square = MOVE[-2:]
                             break
+                        elif event.key == pygame.K_e and ADMIN:
+                            print(api(board.tofen(color),ev=True))
                         elif event.key == pygame.K_k and ADMIN:
+                            HISTORY = False
                             square = board.getsquare(pygame.mouse.get_pos())
                             if square is not None:
                                 p = board.lookup(square)
                                 if p is not None and p.type != 'king':
                                     del board[square]
-                                m = board.whitemoved if p.color == 1 else board.blackmoved
-                                if p.type == 'rook':
-                                    if board.code(square) in ['h1','h8']: m[2] = True
-                                    elif board.code(square) in ['a1','a8']: m[0] = True
+                                    m = board.whitemoved if p.color == 1 else board.blackmoved
+                                    if p.type == 'rook':
+                                        if board.code(square) in ['h1','h8']: m[2] = True
+                                        elif board.code(square) in ['a1','a8']: m[0] = True
                             board.draw(update=True,col=color)
                         elif event.key == pygame.K_1 and ADMIN:
+                            HISTORY = False
                             square = board.getsquare(pygame.mouse.get_pos())
                             if square is not None:
                                 p = board.lookup(square)
@@ -1537,6 +1655,7 @@ def pyloop():
                                     board.setpiece(square,p.type,1)
                                     board.draw(update=True,col=color)
                         elif event.key == pygame.K_0 and ADMIN:
+                            HISTORY = False
                             square = board.getsquare(pygame.mouse.get_pos())
                             if square is not None:
                                 p = board.lookup(square)
@@ -1544,12 +1663,34 @@ def pyloop():
                                     board.setpiece(square,p.type,0)
                                     board.draw(update=True,col=color)
                         elif event.key == pygame.K_m and ADMIN and highlighted is not None:
+                            HISTORY = False
                             square = board.getsquare(pygame.mouse.get_pos())
                             if square is not None:
                                 board.move(highlighted, square)
                                 board.drawsquare(square)
+                                board.drawsquare(highlighted)
                                 pygame.display.update()
+                        elif event.key == pygame.K_h and ADMIN and HISTORY:
+                            print(board.history)
+                        elif event.key == pygame.K_F3:
+                            print(api(board.tofen(color),json=True))
+                        elif event.key == pygame.K_u and (ADMIN or botplay is not None) and HISTORY:
+                            if not board.fullhistory: board.fullhistory = board.history
+                            color = board.undo(1 if botplay is None else 2)
+                            turn = False
+                            cont = True
+                            break
+                        elif event.key == pygame.K_r and (ADMIN or botplay is not None) and HISTORY and board.fullhistory:
+                            L = len(board.history.splitlines())
+                            if len(board.fullhistory.splitlines())>L+1 and board.fullhistory.splitlines()[L+1] in ['queen','knight','bishop','rook']: L += 1
+                            L += int(botplay is not None)
+                            color = board.fromhistory(board.fullhistory,L+1)
+                            if board.history == board.fullhistory: board.fullhistory = ''
+                            turn = False
+                            cont = True
+                            break
                         elif event.key == pygame.K_p and ADMIN:
+                            HISTORY = False
                             square = board.getsquare(pygame.mouse.get_pos())
                             if square is not None and board.lookup(square) is None:
                                 board.drawsquare(square,highlight=True)
@@ -1676,7 +1817,9 @@ def pyloop():
                         board.win.blit(p,center)
                         pygame.display.update()
             if not match: break
+            if cont: continue
             if MOVE is not None and not outcome:
+                board.fullhistory = ''
                 if COLOROVERRIDE:
                     outcome = board.handle_turn(MOVE, color)
                     if not outcome: outcome = board.handle_turn(MOVE, int(not color))
@@ -1685,7 +1828,7 @@ def pyloop():
             if isinstance(outcome, str): # Pawn promotion
                 if botplay is not None and botplay[0] == color:
                     options = ['bishop','knight'] if botplay[1] == 3 else ['knight','bishop','rook','queen'] if botplay == 1 else ['queen']
-                    promo = choice(options)
+                    promo = random.choice(options)
                     prompting = False
                 else:
                     board.draw(col=color)
@@ -1729,6 +1872,7 @@ def pyloop():
                 if promo is not None:
                     board.setpiece(outcome, name=promo)
                     if LOGS: print(f"{"White" if color == 1 else "Black"} promoted pawn on {outcome} to a {promo.capitalize()}.")
+                    if HISTORY: board.history += promo+'\n'
             if forceres == -1 or board.stalemate(int(not color)) or board.drawmate() or any([k=='king' for k in [p.type for p in board.white_captured.union(board.black_captured)]]):
                 if LOGS: print(f"Stalemate!")
                 result = -1
@@ -1757,6 +1901,14 @@ def pyloop():
                 elif event.type == pygame.KEYDOWN:
                     if event.key in [pygame.K_ESCAPE,pygame.K_2]:
                         endscreen, menu = False, True
+                    elif event.key == pygame.K_u and ADMIN and HISTORY:
+                        endscreen, menu, match = False, False, True
+                        MOVE = None
+                        if result == 0: black -= 1
+                        else: white -= 1
+                        result = -1
+                        total -= 1
+                        save = [board.undo()]
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     mx,my = pygame.mouse.get_pos()
                     if buttons[0].collidepoint(mx,my): # Play again
@@ -1766,10 +1918,9 @@ def pyloop():
                         save = None
                         result = -1
                         board.setup()
-                        match = True
                     elif buttons[1].collidepoint(mx,my): # Menu
                         endscreen, menu = False, True
 
 if __name__ == '__main__':
-    # superloop()
-    pyloop()
+    if TERMINAL: superloop()
+    else: pyloop()
