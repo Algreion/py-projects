@@ -3,7 +3,9 @@ TERMINAL = False
 
 pprint = print
 from rich import print
-import os,pygame,requests,random
+import os,requests,random
+os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
+import pygame
 
 RICH = True
 BLACK = 'cyan'
@@ -33,8 +35,8 @@ class Board:
         self.W, self.H = N
         self.type = type
         self.board = [[None for _ in range(self.W)] for _ in range(self.H)]
-        self.symbol_dict = {"king":"♔","queen":"♕","rook":"♖","bishop":"♗","knight":"♘","pawn":"♙"}
-        self.simplified_dict = {"king":"k","queen":"q","rook":"r","bishop":"b","knight":"n","pawn":"p",None: '.'}
+        self.symbol_dict = {"king":"♔","queen":"♕","rook":"♖","bishop":"♗","knight":"♘","pawn":"♙","star":"★","nightrider": '♆',"archbishop": '☥',"empress": '✤','dragon': '✹'}
+        self.simplified_dict = {"king":"k","queen":"q","rook":"r","bishop":"b","knight":"n","pawn":"p",None: '.',"star":'x',"nightrider":'t',"archbishop":'a',"empress":'e',"dragon":'d'}
         self.simplified_dict_invert = dict([(v,k) for k,v in self.simplified_dict.items()])
         self.gap = 2 # board str
         self.blank = '▢'
@@ -49,15 +51,21 @@ class Board:
         self.history = ''
         self.fullhistory = ''
         self.move_dict = {
-        "king":    [(1,0), (-1,0), (0,1), (0,-1),
-                    (1,1), (1,-1), (-1,1), (-1,-1)],
-        "knight":  [(2,1), (2,-1), (-2,1), (-2,-1),
-                    (1,2), (1,-2), (-1,2), (-1,-2)],
+        "king": [(1,0), (-1,0), (0,1), (0,-1),
+                (1,1), (1,-1), (-1,1), (-1,-1)],
+        "knight": [(2,1), (2,-1), (-2,1), (-2,-1),
+                (1,2), (1,-2), (-1,2), (-1,-2)],
         "bishop": [(1,1),(1,-1),(-1,1),(-1,-1)],
         "rook": [(1,0),(0,1),(-1,0),(0,-1)],
-        "queen": [(1,0),(0,1),(-1,0),(0,-1),(1,1),(1,-1),(-1,1),(-1,-1)]
+        "queen": [(1,0),(0,1),(-1,0),(0,-1),(1,1),(1,-1),(-1,1),(-1,-1)],
+        "star": [(i,j) for j in range(-2,3) for i in range(-2,3)],
+        "nightrider": [(2,1), (2,-1), (-2,1), (-2,-1),
+                (1,2), (1,-2), (-1,2), (-1,-2)],
+        "archbishop": [(1,1),(1,-1),(-1,1),(-1,-1)],
+        "empress": [(1,0),(0,1),(-1,0),(0,-1)],
+        "dragon": [(1,0),(0,1),(-1,0),(0,-1),(1,1),(1,-1),(-1,1),(-1,-1)]
         }
-        self.points = {'pawn':1,'knight':3,'bishop':3,'rook':5,'queen':9}
+        self.points = {'pawn':1,'knight':3,'bishop':3,'rook':5,'queen':9,'nightrider': 6, 'archbishop':7, 'empress':8, 'dragon': 12, 'star':100}
         if filled: self.setup()
     def __repr__(self):
         return f"Board(width={self.W},height={self.H},type={self.type})"
@@ -289,7 +297,7 @@ class Board:
         try:
             if len(move) != 5 or ' ' not in move: return move
             square1, square2 = move[:2],move[3:]
-            piece = self.lookup((square1))
+            piece = self.lookup(square1)
             if piece is None:
                 if DEBUGGING: print(f"[Debug] Conversion of '{move}' to implicit failed. Square is empty.")
                 return move
@@ -476,6 +484,12 @@ class Board:
             for w in range(8):
                 p = self[(w,h)]
                 sym = '' if p is None else p.simplified
+                if sym.lower() not in 'kqpbnr':
+                    if sym.lower() == 'a': sym = 'b' if sym.islower() else 'B'
+                    elif sym.lower() == 'e': sym = 'r' if sym.islower() else 'R'
+                    elif sym.lower() == 't': sym = 'n' if sym.islower() else 'N'
+                    elif sym.lower() == 'd': sym = 'q' if sym.islower() else 'Q'
+                    else: sym = ''
                 if sym == "": empty += 1
                 else:
                     if empty:
@@ -593,6 +607,7 @@ class Board:
                 return True
             else:
                 print("Invalid move. Try typing the piece to see available moves.")
+                print(move)
         else:
             print("Unknown input. Type 'help' for info.")
     def fromhistory(self, history: str, moves: int = 0) -> int:
@@ -640,6 +655,7 @@ class Board:
             if move is None:
                 pprint("Bot couldn't find a valid move. Quitting...")
                 quit()
+            print("Move:",self.default(move).replace('P',''))
             outcome = self.handle_turn(move,botcolor)
             if isinstance(outcome,str):
                 match botlogic:
@@ -803,8 +819,9 @@ Chess commands: castle | draw | surrender || Commands: info | save (file) | swap
                         case 'set':
                             square, name = move[1],move[2]
                             col = color if len(move) == 3 else move[3]
-                            if col in ['w','white']: col = 1
-                            elif col in ['b','black']: col = 0
+                            if col in ['w','white','1']: col = 1
+                            elif col in ['b','black','0']: col = 0
+                            else: col = color
                             self.setpiece(square,name,col)
                             print(f"Set piece on {square} to {"White" if col==1 else "Black"} {name.capitalize()}.")
                             print("\n")
@@ -889,7 +906,7 @@ Chess commands: castle | draw | surrender || Commands: info | save (file) | swap
 class Piece:
     def __init__(self, type: str, color: int, board: Board | None = None):
         """Chess piece. Color 0 = Black, 1 = White.
-        Type options: pawn | knight | rook | bishop | queen | king"""
+        Type options: pawn | knight | rook | bishop | queen | king || star | nightrider | archbishop | empress | dragon"""
         self.type = type
         self.color = color
         self.board = board if board is not None else Board()
@@ -925,6 +942,14 @@ class Piece:
                             break
                         options.append((dx*(i+1),dy*(i+1)))
             case 'king': options = d
+            case 'star': options = d
+            case 'nightrider' | 'archbishop' | 'empress' | 'dragon':
+                for (dx,dy) in d:
+                    for i in range(N):
+                        if not (0<=x+dx*(i+1)<self.board.W and 0<=y+dy*(i+1)<self.board.H) or self.board.lookup((x+dx*(i+1),y+dy*(i+1))) is not None: 
+                            break
+                        options.append((dx*(i+1),dy*(i+1)))
+                if self.type in ['archbishop','empress','dragon']: options += self.board.move_dict['knight']
             case _:
                 return []
         options = list(filter(lambda a: 0<=a[0]<self.board.W and 0<=a[1]<self.board.H, [(x+dx,y+dy) for dx,dy in options]))
@@ -959,6 +984,16 @@ class Piece:
                         if self.board.lookup((x+dx*(i+1),y+dy*(i+1))) is not None: 
                             break
             case 'king': options = d
+            case 'star': options = d
+            case 'nightrider' | 'archbishop' | 'empress' | 'dragon':
+                for (dx,dy) in d:
+                    for i in range(N):
+                        if not (0<=x+dx*(i+1)<self.board.W and 0<=y+dy*(i+1)<self.board.H):
+                            break
+                        options.append((dx*(i+1),dy*(i+1)))
+                        if self.board.lookup((x+dx*(i+1),y+dy*(i+1))) is not None: 
+                            break
+                if self.type in ['archbishop','empress','dragon']: options += self.board.move_dict['knight']
             case _:
                 return []
         C = lambda X: True if override else (self.board.lookup(X) is not None and self.board.lookup(X).color != self.color)
@@ -1010,7 +1045,7 @@ def superloop():
                     case '3': 
                         color = random.randint(0,1)
                         pprint(f"Randomly assigned to {'White' if color == 0 else 'Black'}.")
-                diff = 'Easy' if logic == 3 else 'Medium' if logic == 1 else 'Hard'
+                diff = 'Easy' if logic == 3 else 'Medium' if logic == 1 else 'Hard' if logic == 2 else 'Impossible'
                 board = Board(filled=True)
                 if board.mainloop(botplay=(color,logic)) != color: 
                     if logic == 3: remark = "You just dashed the bot's hopes and dreams. Perhaps try a harder difficulty for a real challenge?"
@@ -1392,7 +1427,7 @@ class PyBoard(Board):
         """Renders keybind help screen. Returns 'back' button."""
         self.win.fill(MENUBG)
         text = "Menu Keybinds:\nA = Toggle Admin\nC = Toggle Console Logs\n\nMatch Keybinds:\nS = Toggle board swapping | I = Toggle move info\nQ = Resign | D = Offer draw | U = Undo | R = Redo\nEscape = Menu"
-        text += "\n\nAdmin:\nO = Override color | L = Lock turn | N = Random move\nB = Best move | E = eval | U/R = Undo/Redo (player)\nK = Delete piece | M = Move highlighted\n0/1 = Convert piece to black/white\nP = Add piece (Press Q/R/B/N/P)\nG = Save board | F = Print FEN"
+        text += "\n\nAdmin:\nO = Override color | L = Lock turn | N = Random move\nB = Best move | E = eval | U/R = Undo/Redo (player)\nK = Delete piece | M = Move highlighted\n0/1 = Convert piece to black/white\nP = Add piece. Press Q/R/B/N/P, custom: K/A/E/D/X\nG = Save board | F = Print FEN"
         y = HEIGHT//20
         for line in text.splitlines():
             i = self.font.render(line, True, MENUFONT)
@@ -1633,7 +1668,9 @@ def pyloop():
                             square = MOVE[-2:]
                             break
                         elif event.key == pygame.K_e and ADMIN:
-                            print(api(board.tofen(color),ev=True))
+                            print("Board evaluation:")
+                            if HISTORY: print(api(board.tofen(color),ev=True))
+                            else: print(board.advantage(1))
                         elif event.key == pygame.K_k and ADMIN:
                             HISTORY = False
                             square = board.getsquare(pygame.mouse.get_pos())
@@ -1690,7 +1727,6 @@ def pyloop():
                             cont = True
                             break
                         elif event.key == pygame.K_p and ADMIN:
-                            HISTORY = False
                             square = board.getsquare(pygame.mouse.get_pos())
                             if square is not None and board.lookup(square) is None:
                                 board.drawsquare(square,highlight=True)
@@ -1708,9 +1744,16 @@ def pyloop():
                                             elif event.key == pygame.K_n: piece = 'knight'
                                             elif event.key == pygame.K_b: piece = 'bishop'
                                             elif event.key == pygame.K_p: piece = 'pawn'
+                                            elif event.key == pygame.K_x: piece = 'star'
+                                            elif event.key == pygame.K_k: piece = 'nightrider'
+                                            elif event.key == pygame.K_a: piece = 'archbishop'
+                                            elif event.key == pygame.K_e: piece = 'empress'
+                                            elif event.key == pygame.K_d: piece = 'dragon'
                                             elif event.key in [pygame.K_i,pygame.K_ESCAPE]: piece = ''
                                     if piece is not None: break
-                                if piece: board.setpiece(square,piece,color)
+                                if piece:
+                                    board.setpiece(square,piece,color)
+                                    HISTORY = False
                                 board.drawsquare(square)
                                 pygame.display.update()
                         elif event.key == pygame.K_q:
@@ -1924,3 +1967,5 @@ def pyloop():
 if __name__ == '__main__':
     if TERMINAL: superloop()
     else: pyloop()
+
+# put them all in HELP, then fix terminal version
