@@ -3,7 +3,7 @@ TERMINAL = False
 
 pprint = print
 from rich import print
-import os,requests,random
+import os,requests,random,time
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 import pygame
 
@@ -17,8 +17,46 @@ SEP = "_______________________________"
 
 ADMIN = True
 DEBUGGING = False
-TIMEOUT = 3 # Seconds for API request
+TIMEOUT = 2 # Seconds for API request
 HISTORY = True
+WAIT = 0 # Minimum bot thinking time
+
+# PyGame variables
+WIDTH, HEIGHT = 800,800
+GAPX,GAPY = 15,15
+BG = (45,34,24)
+LIGHT = (240, 217, 181)
+DARK = (181, 136, 99)
+SWAPPING = False
+BORDER = True
+SQUAREBORDER_COLOR = (45, 34, 24)
+SQUAREBORDER_WIDTH = 1
+BLACKPIECE = (0,0,0)
+WHITEPIECE = (255,255,255)
+MOVEOPTION = (181, 217, 240)
+DMOVEOPTION = (99, 136, 181)
+MOVEOPTION_BORDER = 0
+CAPTUREOPTION = (240, 181, 181)
+DCAPTUREOPTION = (181, 99, 99)
+CAPTUREOPTION_BORDER = 0
+HIGHLIGHT = (0,255,0)
+HIGHLIGHT_BORDER = 4
+HIGHLIGHT2 = (181, 240, 181)
+DHIGHLIGHT2 = (99, 181, 99)
+HIGHLIGHT2_BORDER = 0
+PROMOCOLOR = (255,215,0)
+PROMOINFO = (78,45,0)
+INFO = True
+INFODARK = LIGHT
+INFOLIGHT = DARK
+MENUBG = (255,255,255)
+MENUFONT = (0,0,0)
+IMPOSSIBLE = (255,0,0)
+MENUBUTTONS = (0,0,0)
+ENDFONT = (0,200,255)
+ENDBUTTONS = (255,255,255)
+ENDBUTTONSFONT = (0,0,0)
+HINT = (255,215,0)
 
 def api(fen: str, ev: bool = False, json: bool = False) -> str:
     """Sends FEN board to API and returns best move. ev=True returns eval."""
@@ -1114,41 +1152,6 @@ def superloop():
 # ____________________________________________________________________________________________________________________________
 pygame.font.init()
 
-WIDTH, HEIGHT = 800,800
-GAPX,GAPY = 15,15
-BG = (45,34,24)
-LIGHT = (240, 217, 181)
-DARK = (181, 136, 99)
-SWAPPING = False
-BORDER = True
-SQUAREBORDER_COLOR = (45, 34, 24)
-SQUAREBORDER_WIDTH = 1
-BLACKPIECE = (0,0,0)
-WHITEPIECE = (255,255,255)
-MOVEOPTION = (181, 217, 240)
-DMOVEOPTION = (99, 136, 181)
-MOVEOPTION_BORDER = 0
-CAPTUREOPTION = (240, 181, 181)
-DCAPTUREOPTION = (181, 99, 99)
-CAPTUREOPTION_BORDER = 0
-HIGHLIGHT = (0,255,0)
-HIGHLIGHT_BORDER = 4
-HIGHLIGHT2 = (181, 240, 181)
-DHIGHLIGHT2 = (99, 181, 99)
-HIGHLIGHT2_BORDER = 0
-PROMOCOLOR = (255,215,0)
-PROMOINFO = (78,45,0)
-INFO = True
-INFODARK = LIGHT
-INFOLIGHT = DARK
-MENUBG = (255,255,255)
-MENUFONT = (0,0,0)
-IMPOSSIBLE = (255,0,0)
-MENUBUTTONS = (0,0,0)
-ENDFONT = (0,200,255)
-ENDBUTTONS = (255,255,255)
-ENDBUTTONSFONT = (0,0,0)
-
 WIDTH -= (WIDTH-2*GAPX)%8
 HEIGHT -= (HEIGHT-2*GAPY)%8
 BOARDW,BOARDH = WIDTH-2*GAPX,HEIGHT-2*GAPY
@@ -1287,7 +1290,7 @@ class PyBoard(Board):
         for i,O in enumerate([('queen',c,'1'),('knight',c,'2'),('rook',c,'3'),('bishop',c,'4')]):
             self.drawsquare(squares[i],promo=O)
         return squares
-    def drawsquare(self, location: tuple, highlight: bool = False, moveoption: bool = False, piece: bool = True, hl2: bool = False, captureoption: bool = False, promo: tuple | None = None):
+    def drawsquare(self, location: tuple, highlight: bool = False, moveoption: bool = False, piece: bool = True, hl2: bool = False, captureoption: bool = False, promo: tuple | None = None, hint: int = -1):
         """Draws a single square. Location is (x,y)."""
         w,h = location
         col = DARK if (w+h)%2 else LIGHT
@@ -1307,6 +1310,9 @@ class PyBoard(Board):
         if hl2:
             pygame.draw.rect(self.win,DHIGHLIGHT2 if (w+h)%2 else HIGHLIGHT2,(coord[0],coord[1],self.w,self.h),HIGHLIGHT2_BORDER)
             if HIGHLIGHT2_BORDER == 0 and BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
+        if hint>=0:
+            pygame.draw.rect(self.win,HINT,(coord[0],coord[1],self.w,self.h),hint)
+            if hint == 0 and BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
         p = self[(w,h)] if promo is None else Piece(promo[0],promo[1])
         if p is not None and piece:
             p = self.piecefont.render(p.symbol, True, WHITEPIECE if p.color else BLACKPIECE)
@@ -1427,7 +1433,7 @@ class PyBoard(Board):
         """Renders keybind help screen. Returns 'back' button."""
         self.win.fill(MENUBG)
         text = "Menu Keybinds:\nA = Toggle Admin\nC = Toggle Console Logs\n\nMatch Keybinds:\nS = Toggle board swapping | I = Toggle move info\nQ = Resign | D = Offer draw | U = Undo | R = Redo\nEscape = Menu"
-        text += "\n\nAdmin:\nO = Override color | L = Lock turn | N = Random move\nB = Best move | E = eval | U/R = Undo/Redo (player)\nK = Delete piece | M = Move highlighted\n0/1 = Convert piece to black/white\nP = Add piece. Press Q/R/B/N/P, custom: K/A/E/D/X\nG = Save board | F = Print FEN"
+        text += "\n\nAdmin:\nO = Override color | L = Lock turn | N = Random move\nH = Hint | E = eval | U/R = Undo/Redo (player)\nK = Delete piece | M = Move highlighted\n0/1 = Convert piece to black/white\nP = Add piece. Press Q/R/B/N/P, custom: K/A/E/D/X\nG = Save board | F = Print FEN"
         y = HEIGHT//20
         for line in text.splitlines():
             i = self.font.render(line, True, MENUFONT)
@@ -1622,6 +1628,9 @@ def pyloop():
             if botplay is not None and botplay[0] == color:
                 turn = False
                 if botplay[1] == 4: board.draw(update=True,col=color)
+                elif WAIT>0:
+                    board.draw(update=True,col=color)
+                    time.sleep(WAIT)
                 MOVE = board.ai(*botplay)
             else:
                 board.draw(update=True,col=color)
@@ -1707,8 +1716,19 @@ def pyloop():
                                 board.drawsquare(square)
                                 board.drawsquare(highlighted)
                                 pygame.display.update()
-                        elif event.key == pygame.K_h and ADMIN and HISTORY:
-                            print(board.history)
+                        elif event.key == pygame.K_h:
+                            S = board.ai(color,logic=4)
+                            S1 = ''
+                            if S == 'castle':
+                                if color == 0: S,S1 = 'g8','e8'
+                                else: S,S1= 'g1','e1'
+                            elif S == 'longcastle':
+                                if color == 0: S,S1 = 'b8','e8'
+                                else: S,S1 = 'b1','e8'
+                            else: S,S1= S[-2:],S[:2]
+                            board.drawsquare(board.ind(S),hint=0)
+                            board.drawsquare(board.ind(S1),hint=min(10,HIGHLIGHT_BORDER))
+                            pygame.display.update()
                         elif event.key == pygame.K_F3:
                             print(api(board.tofen(color),json=True))
                         elif event.key == pygame.K_u and (ADMIN or botplay is not None) and HISTORY:
@@ -1963,7 +1983,7 @@ def pyloop():
                         board.setup()
                     elif buttons[1].collidepoint(mx,my): # Menu
                         endscreen, menu = False, True
-
+                        save = None
 if __name__ == '__main__':
     if TERMINAL: superloop()
     else: pyloop()
