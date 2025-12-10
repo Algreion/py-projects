@@ -447,28 +447,28 @@ class Board:
         check = self.whitemoved if color==1 else self.blackmoved
         if color == 1:
             C = 'e1'
-            if long: i,A,B,D,E = 0,'a1','c1','b1',self.lookup('d1') is None
-            else: i,A,B,D,E = 2,'h1','f1','g1',True
+            if long: i,A,B,D,E = 0,'a1','c1','b1','d1'
+            else: i,A,B,D,E = 2,'h1','g1','f1','f1'
         else:
             C = 'e8'
-            if long: i,A,B,D,E = 0,'a8','c8','b8',self.lookup('d8') is None
-            else: i,A,B,D,E = 2,'h8','f8','g8',True
-        if check[1] or check[i] or not (self.lookup(B) is None and self.lookup(D) is None and E):
+            if long: i,A,B,D,E = 0,'a8','c8','b8','d8'
+            else: i,A,B,D,E = 2,'h8','g8','f8','f8'
+        if check[1] or check[i] or self.checkcheck(color) or self.check(E,color) or not (self.lookup(B) is None and self.lookup(D) is None and self.lookup(E) is None):
             if commit: print("Unable to castle.")
             return False
-        self.move(A,B)
-        self.move(C,D)
-        if self.check(D):
-            self.move(B,A)
-            self.move(D,C)
+        self.move(A,E)
+        self.move(C,B)
+        if self.check(B):
+            self.move(E,A)
+            self.move(B,C)
             if commit: print("Unable to castle.")
             return False
         if commit: 
             if color == 1: self.whitemoved = [True,True,True]
             else: self.blackmoved = [True,True,True]
             return True
-        self.move(B,A)
-        self.move(D,C)
+        self.move(E,A)
+        self.move(B,C)
         return True
     def checkpromo(self, square: str | tuple) -> bool:
         """Returns whether pawn can be promoted."""
@@ -1342,7 +1342,7 @@ class PyBoard(Board):
             c = (6,0) if p.color == 1 else (6,7)
             self.drawsquare(c,moveoption=True)
         if 'longcastle' in options:
-            lc = (1,0) if p.color == 1 else (1,7)
+            lc = (2,0) if p.color == 1 else (2,7)
             self.drawsquare(lc,moveoption=True)
         if c is not None: triggers.append(c)
         if lc is not None: triggers.append(lc)
@@ -1723,8 +1723,8 @@ def pyloop():
                                 if color == 0: S,S1 = 'g8','e8'
                                 else: S,S1= 'g1','e1'
                             elif S == 'longcastle':
-                                if color == 0: S,S1 = 'b8','e8'
-                                else: S,S1 = 'b1','e8'
+                                if color == 0: S,S1 = 'c8','e8'
+                                else: S,S1 = 'c1','e8'
                             else: S,S1= S[-2:],S[:2]
                             board.drawsquare(board.ind(S),hint=0)
                             board.drawsquare(board.ind(S1),hint=min(10,HIGHLIGHT_BORDER))
@@ -1826,7 +1826,7 @@ def pyloop():
                         if square in optionsTriggers: # Handleturn
                             turn = False
                             if 'castle' in options and square in [(6,0),(6,7)]: MOVE = 'castle'
-                            elif 'longcastle' in options and square in [(1,0),(1,7)]: MOVE = 'longcastle'
+                            elif 'longcastle' in options and square in [(2,0),(2,7)]: MOVE = 'longcastle'
                             else: MOVE = f"{board.code(highlighted)} {board.code(square)}"
                             break
                         if square is not None:
@@ -1856,7 +1856,7 @@ def pyloop():
                             if square in optionsTriggers: # Handleturn
                                 turn = False
                                 if 'castle' in options and square in [(6,0),(6,7)]: MOVE = 'castle'
-                                elif 'longcastle' in options and square in [(1,0),(1,7)]: MOVE = 'longcastle'
+                                elif 'longcastle' in options and square in [(2,0),(2,7)]: MOVE = 'longcastle'
                                 else: MOVE = f"{board.code(highlighted)} {board.code(square)}"
                                 break
                             board.draw(col=color)
