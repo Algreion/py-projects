@@ -6,8 +6,6 @@ pygame.font.init()
 
 CUSTOM = (16,16,225) # (Width, Height, Mines)
 
-#TODO: Sounds
-
 WIDTH, HEIGHT = 800,800
 GAPX,GAPY = 25,25
 BG = (255,255,255)
@@ -86,52 +84,73 @@ def mainloop(w: int, h: int, mines: int, cont = None) -> int:
             elif event.type == pygame.MOUSEBUTTONDOWN and pygame.mouse.get_pressed()[0]:
                 x,y = pygame.mouse.get_pos()
                 x,y = (x-GAPX)//board.cellw, (y-GAPY)//board.cellh
-                if not (0<=x<board.w) or not (0<=y<board.h) or board[(x,y)].flag or board[(x,y)].shown: continue
-                if first:
-                    board.setup(firstclick=(x,y))
-                    if INFO[1]: start = time.monotonic()
-                    first = False
-                if CLEAR: board.clear(board[(x,y)])
-                else: board[(x,y)].shown=True
+                if not (0<=x<board.w) or not (0<=y<board.h) or board[(x,y)].flag: continue
+                cell = board[(x,y)]
+                if cell.shown:
+                    H = cell.hint
+                    if H < 1: continue
+                    for C in cell.adj(board.board):
+                        if C.flag == True: H -= 1
+                    if H > 0: continue
+                    cells = []
+                    for C in cell.adj(board.board):
+                        if not C.shown and not C.flag:
+                            if CLEAR: board.clear(C)
+                            else: C.shown=True
+                            cells.append(C)
+                else:
+                    if first:
+                        board.setup(firstclick=(x,y))
+                        if INFO[1]: start = time.monotonic()
+                        first = False
+                    if CLEAR: board.clear(board[(x,y)])
+                    else: cell.shown=True
+                    cells = [cell]
                 board.draw(update=True, sec=now)
-                if board[(x,y)].hint == -1:
-                    time.sleep(LOSETIME)
-                    losing = True
-                    buttons = board.drawwin(sec=now,loss=True)
-                    rev = False
-                    while losing:
-                        for event in pygame.event.get():
-                            if event.type == pygame.QUIT:
-                                losing,running = False, False
-                                break
-                            elif rev and event.type in [pygame.MOUSEBUTTONDOWN,pygame.KEYDOWN]:
-                                buttons = board.drawwin(sec=now,loss=True)
-                                rev = False
-                            elif not rev and event.type == pygame.MOUSEBUTTONDOWN:
-                                mx,my = pygame.mouse.get_pos()
-                                if buttons[0].collidepoint(mx,my): # Play Again
-                                    losing = False
-                                    del board
-                                    board = Board(w,h,mines,window)
-                                    first,start,now,res = True,0,0,-1
-                                    board.draw(update=True, sec=now)
-                                    break
-                                elif buttons[1].collidepoint(mx,my): # Menu
-                                    res = 1
+                for C in cells:
+                    if C.hint == -1:
+                        time.sleep(LOSETIME)
+                        losing = True
+                        buttons = board.drawwin(sec=now,loss=True)
+                        rev = False
+                        while losing:
+                            for event in pygame.event.get():
+                                if event.type == pygame.QUIT:
                                     losing,running = False, False
                                     break
-                                elif buttons[2].collidepoint(mx,my): # Quit
-                                    losing,running = False, False
-                                    break
-                                elif buttons[3].collidepoint(mx,my): # Reveal
-                                    rev = True
-                                    for y in range(board.h):
-                                        for x in range(board.w):
-                                            c = board[(x,y)]
-                                            if c.flag and c.hint==-1: continue
-                                            c.flag,c.shown = False,True
-                                    board.draw(update=True,sec=now)
-                elif board.checkwin():
+                                elif rev and event.type in [pygame.MOUSEBUTTONDOWN,pygame.KEYDOWN]:
+                                    buttons = board.drawwin(sec=now,loss=True)
+                                    rev = False
+                                elif not rev and event.type == pygame.KEYDOWN:
+                                    if event.key in [pygame.K_ESCAPE, pygame.K_x]:
+                                        res = 1
+                                        losing,running = False, False
+                                        break
+                                elif not rev and event.type == pygame.MOUSEBUTTONDOWN:
+                                    mx,my = pygame.mouse.get_pos()
+                                    if buttons[0].collidepoint(mx,my): # Play Again
+                                        losing = False
+                                        del board
+                                        board = Board(w,h,mines,window)
+                                        first,start,now,res = True,0,0,-1
+                                        board.draw(update=True, sec=now)
+                                        break
+                                    elif buttons[1].collidepoint(mx,my): # Menu
+                                        res = 1
+                                        losing,running = False, False
+                                        break
+                                    elif buttons[2].collidepoint(mx,my): # Quit
+                                        losing,running = False, False
+                                        break
+                                    elif buttons[3].collidepoint(mx,my): # Reveal
+                                        rev = True
+                                        for y in range(board.h):
+                                            for x in range(board.w):
+                                                c = board[(x,y)]
+                                                if c.flag and c.hint==-1: continue
+                                                c.flag,c.shown = False,True
+                                        board.draw(update=True,sec=now)
+                if board.checkwin() and running:
                     winning = True
                     buttons = board.drawwin(sec=now)
                     while winning:
@@ -139,6 +158,11 @@ def mainloop(w: int, h: int, mines: int, cont = None) -> int:
                             if event.type == pygame.QUIT:
                                 winning,running = False, False
                                 break
+                            elif event.type == pygame.KEYDOWN:
+                                if event.key in [pygame.K_ESCAPE, pygame.K_x]:
+                                    res = 1
+                                    winning,running = False, False
+                                    break
                             elif event.type == pygame.MOUSEBUTTONDOWN:
                                 mx,my = pygame.mouse.get_pos()
                                 if buttons[0].collidepoint(mx,my): # Play Again
