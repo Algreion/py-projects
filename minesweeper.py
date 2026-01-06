@@ -6,13 +6,13 @@ pygame.font.init()
 
 CUSTOM = (16,16,225) # (Width, Height, Mines)
 
-#TODO: Final polish, sounds
+#TODO: Sounds
 
 WIDTH, HEIGHT = 800,800
 GAPX,GAPY = 25,25
 BG = (255,255,255)
-CELL = (100,100,100)
-SHOWNCELL = (150,150,150)
+CELL = (150,150,150)
+SHOWNCELL = (200,200,200)
 FLAGCOLOR = (255,0,0)
 BORDER = True
 BORDERWIDTH = 1
@@ -46,7 +46,6 @@ DIFFICULTY = {
     4: CUSTOM
 }
 
-
 CLEAR = True # Clears all safe cells.
 INFO = (True, True) # (Flag count, timer)
 LOSETIME = 0.5 # Time before bomb explodes
@@ -77,8 +76,11 @@ def mainloop(w: int, h: int, mines: int, cont = None) -> int:
                 break
             elif event.type == pygame.KEYDOWN:
                 if event.key in [pygame.K_ESCAPE,pygame.K_x]:
-                    board.seconds = now
-                    res = board
+                    if first:
+                        res = 1
+                    else:
+                        board.seconds = now
+                        res = board
                     running = False
                     break
             elif event.type == pygame.MOUSEBUTTONDOWN and pygame.mouse.get_pressed()[0]:
@@ -254,6 +256,31 @@ def loop():
                     pygame.quit()
                     running = False
                     break
+                elif event.key == pygame.K_1: # Easy
+                    res = mainloop(*DIFFICULTY[1])
+                elif event.key == pygame.K_2: # Intermediate
+                    res = mainloop(*DIFFICULTY[2])
+                elif event.key == pygame.K_3: # Expert
+                    res = mainloop(*DIFFICULTY[3])
+                elif event.key == pygame.K_4: # Custom, edit in file
+                    res = mainloop(*DIFFICULTY[4])
+                elif event.key == pygame.K_5: # Quit
+                    pygame.quit()
+                    running = False
+                    break
+                elif cont and event.key == pygame.K_0: # Continue
+                    res = mainloop(res.w,res.h,res.mines,res)
+                if res == -1:
+                    running = False
+                    pygame.quit()
+                    break
+                elif res == 1:
+                    cont = False
+                    res = -2
+                    buttons = drawmenu(window,endfont)
+                elif isinstance(res,Board):
+                    cont = True
+                    buttons = drawmenu(window,endfont,cont)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx,my = pygame.mouse.get_pos()
                 if buttons[0].collidepoint(mx,my): # Easy
@@ -262,7 +289,7 @@ def loop():
                     res = mainloop(*DIFFICULTY[2])
                 elif buttons[2].collidepoint(mx,my): # Expert
                     res = mainloop(*DIFFICULTY[3])
-                elif buttons[3].collidepoint(mx,my): # Custom, change in file
+                elif buttons[3].collidepoint(mx,my): # Custom
                     res = mainloop(*DIFFICULTY[4])
                 elif buttons[4].collidepoint(mx,my): # Quit
                     pygame.quit()
