@@ -5,6 +5,10 @@ import pygame
 pygame.font.init()
 
 CUSTOM = (16,16,225) # (Width, Height, Mines)
+CLEAR = True # Clears all safe cells
+INFO = (True, True) # (Flag count, timer)
+ADMIN = True # Enables certain commands
+
 
 WIDTH, HEIGHT = 800,800
 GAPX,GAPY = 25,25
@@ -44,8 +48,6 @@ DIFFICULTY = {
     4: CUSTOM
 }
 
-CLEAR = True # Clears all safe cells.
-INFO = (True, True) # (Flag count, timer)
 LOSETIME = 0.5 # Time before bomb explodes
 
 def mainloop(w: int, h: int, mines: int, cont = None) -> int:
@@ -81,6 +83,47 @@ def mainloop(w: int, h: int, mines: int, cont = None) -> int:
                         res = board
                     running = False
                     break
+                elif event.key == pygame.K_h and ADMIN and not first:
+                    x,y = pygame.mouse.get_pos()
+                    x,y = (x-GAPX)//board.cellw, (y-GAPY)//board.cellh
+                    if not (0<=x<board.w) or not (0<=y<board.h): continue
+                    cell = board[(x,y)]
+                    if cell.shown: continue
+                    if cell.hint == -1: cell.flag = True
+                    else:
+                        if cell.flag: cell.flag = False
+                        if CLEAR: board.clear(cell)
+                        else: cell.shown = True
+                    board.draw(update=True,sec=now)
+                    if board.checkwin() and running:
+                        winning = True
+                        buttons = board.drawwin(sec=now)
+                        while winning:
+                            for event in pygame.event.get():
+                                if event.type == pygame.QUIT:
+                                    winning,running = False, False
+                                    break
+                                elif event.type == pygame.KEYDOWN:
+                                    if event.key in [pygame.K_ESCAPE, pygame.K_x]:
+                                        res = 1
+                                        winning,running = False, False
+                                        break
+                                elif event.type == pygame.MOUSEBUTTONDOWN:
+                                    mx,my = pygame.mouse.get_pos()
+                                    if buttons[0].collidepoint(mx,my): # Play Again
+                                        winning = False
+                                        del board
+                                        board = Board(w,h,mines,window)
+                                        first,start,now,res = True,0,0,-1
+                                        board.draw(update=True, sec=now)
+                                        break
+                                    elif buttons[1].collidepoint(mx,my): # Menu
+                                        res = 1
+                                        winning,running = False, False
+                                        break
+                                    elif buttons[2].collidepoint(mx,my): # Quit
+                                        winning,running = False, False
+                                        break
             elif event.type == pygame.MOUSEBUTTONDOWN and pygame.mouse.get_pressed()[0]:
                 x,y = pygame.mouse.get_pos()
                 x,y = (x-GAPX)//board.cellw, (y-GAPY)//board.cellh
