@@ -15,7 +15,7 @@ GAPX,GAPY = 15,15
 BG = (255,255,255)
 CELL = (100,100,100)
 SHOWNCELL = (150,150,150)
-CELLFONT = (0,0,0)
+FLAGCOLOR = (255,0,0)
 BORDER = True
 BORDERWIDTH = 1
 BORDERCOLOR = (0,0,0)
@@ -23,6 +23,21 @@ BORDERCOLOR = (0,0,0)
 BOARDW,BOARDH = WIDTH-2*GAPX,HEIGHT-2*GAPY
 
 SYMBOLS = {'flag':'🚩','mine':'💣'}
+HINTCOLOR = {
+    -1: (0,0,0), # Bomb
+    0: SHOWNCELL,
+    1: (0, 0, 255),
+    2: (0, 128, 0),
+    3: (255, 0, 0),
+    4: (0, 0, 128),
+    5: (128, 0, 0),
+    6: (0, 128, 128),
+    7: (123,110,0),
+    8: (200,0,200),
+}
+
+
+CLEAR = True # Clears all safe cells.
 
 def mainloop(w: int, h: int, mines: int):
     global WIDTH, HEIGHT,BOARDW,BOARDH
@@ -43,16 +58,19 @@ def mainloop(w: int, h: int, mines: int):
             elif event.type == pygame.MOUSEBUTTONDOWN and pygame.mouse.get_pressed()[0]:
                 x,y = pygame.mouse.get_pos()
                 x,y = (x-GAPX)//board.cellw, (y-GAPY)//board.cellh
-                if not (0<=x<board.w) or not (0<=y<board.h): continue
+                if not (0<=x<board.w) or not (0<=y<board.h) or board[(x,y)].flag or board[(x,y)].shown: continue
                 if first:
                     board.setup(firstclick=(x,y))
-                    board[(x,y)].shown = True
-                    board.draw(update=True)
                     first = False
-                    continue
-                board[(x,y)].shown = True
+                if CLEAR: board.clear(board[(x,y)])
+                else: board[(x,y)].shown=True
                 board.draw(update=True)
-
+            elif event.type == pygame.MOUSEBUTTONDOWN and pygame.mouse.get_pressed()[2] and not first:
+                x,y = pygame.mouse.get_pos()
+                x,y = (x-GAPX)//board.cellw, (y-GAPY)//board.cellh
+                if not (0<=x<board.w) or not (0<=y<board.h) or board[(x,y)].shown: continue
+                board[(x,y)].flag ^= True
+                board.draw(update=True)
 class Cell:
     def __init__(self, index: tuple, mine: bool = False, shown: bool = False):
         self.shown = shown
@@ -78,11 +96,11 @@ class Cell:
         if BORDER: pygame.draw.rect(win, BORDERCOLOR, (coord[0], coord[1], size[0], size[1]), BORDERWIDTH)
         if self.shown:
             txt = SYMBOLS['mine'] if self.hint == -1 else str(self.hint)
-            p = font.render(txt, True, CELLFONT)
+            p = font.render(txt, True, HINTCOLOR[self.hint])
             center = p.get_rect(center=(coord[0]+size[0]//2,coord[1]+size[1]//2))
             win.blit(p,center)
         elif self.flag:
-            p = font.render(SYMBOLS['flag'], True, CELLFONT)
+            p = font.render(SYMBOLS['flag'], True, FLAGCOLOR)
             center = p.get_rect(center=(coord[0]+size[0]//2,coord[1]+size[1]//2))
             win.blit(p,center)
 class Board:
@@ -119,6 +137,17 @@ class Board:
             else: last.pop().hint = -1
         for c in choices+last+[self.board[firstclick[1]][firstclick[0]]]:
             c.check(self.board)
+    def clear(self, cell: Cell) -> None:
+        """Shows all spots surrounding safe cells."""
+        done = set()
+        def clear0(c: Cell) -> None:
+            nonlocal done
+            if c in done: return
+            done.add(c)
+            c.shown = True
+            if c.hint == 0:
+                for ce in c.adj(self.board): clear0(ce)
+        clear0(cell)
     def draw(self, update: bool = False) -> None:
         """Renders board."""
         if self.win is None: return
