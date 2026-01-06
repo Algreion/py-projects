@@ -1,17 +1,17 @@
 
-import pygame,random,os
+import pygame,random,os,time
 pygame.font.init()
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 
 # Difficulty:
 # Beginner - 9x9, 10 mines
 # Intermediate - 16x16, 40 mines
-# Expert - 16x30, 99 mines
+# Expert - 25x25, 125 mines
 
-# todo: change color of hint depending on number
+#TODO: Add end condition & end screen, menu, difficulties (& difficulty info)
 
 WIDTH, HEIGHT = 800,800
-GAPX,GAPY = 15,15
+GAPX,GAPY = 25,25
 BG = (255,255,255)
 CELL = (100,100,100)
 SHOWNCELL = (150,150,150)
@@ -19,7 +19,7 @@ FLAGCOLOR = (255,0,0)
 BORDER = True
 BORDERWIDTH = 1
 BORDERCOLOR = (0,0,0)
-
+TIMERCOLOR = (0,0,0)
 BOARDW,BOARDH = WIDTH-2*GAPX,HEIGHT-2*GAPY
 
 SYMBOLS = {'flag':'🚩','mine':'💣'}
@@ -38,17 +38,21 @@ HINTCOLOR = {
 
 
 CLEAR = True # Clears all safe cells.
+INFO = (True, False) # (Flag count, timer)
 
 def mainloop(w: int, h: int, mines: int):
     global WIDTH, HEIGHT,BOARDW,BOARDH
-    WIDTH -= (WIDTH-2*GAPX)%8
-    HEIGHT -= (HEIGHT-2*GAPY)%8
+    WIDTH -= (WIDTH-2*GAPX)%w
+    HEIGHT -= (HEIGHT-2*GAPY)%h
     BOARDW,BOARDH = WIDTH-2*GAPX,HEIGHT-2*GAPY
     window = pygame.display.set_mode((WIDTH, HEIGHT))
+    pygame.display.set_caption("Minesweeper")
     board = Board(w,h,mines,window)
     first = True
+    start = 0
+    now = 0
     running = True
-    board.draw(update=True)
+    board.draw(update=True, sec=now)
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -61,16 +65,23 @@ def mainloop(w: int, h: int, mines: int):
                 if not (0<=x<board.w) or not (0<=y<board.h) or board[(x,y)].flag or board[(x,y)].shown: continue
                 if first:
                     board.setup(firstclick=(x,y))
+                    if INFO[1]: start = time.monotonic()
                     first = False
                 if CLEAR: board.clear(board[(x,y)])
                 else: board[(x,y)].shown=True
-                board.draw(update=True)
+                board.draw(update=True, sec=now)
             elif event.type == pygame.MOUSEBUTTONDOWN and pygame.mouse.get_pressed()[2] and not first:
                 x,y = pygame.mouse.get_pos()
                 x,y = (x-GAPX)//board.cellw, (y-GAPY)//board.cellh
                 if not (0<=x<board.w) or not (0<=y<board.h) or board[(x,y)].shown: continue
                 board[(x,y)].flag ^= True
-                board.draw(update=True)
+                if board[(x,y)].flag: board.flags -= 1
+                else: board.flags += 1
+                board.draw(update=True, sec=now)
+        if not running: break
+        if start != 0 and INFO[1] and int(time.monotonic()-start) != now:
+            now = int(time.monotonic()-start)
+            board.draw(update=True,sec=now)
 class Cell:
     def __init__(self, index: tuple, mine: bool = False, shown: bool = False):
         self.shown = shown
@@ -110,10 +121,13 @@ class Board:
         self.mines = mines
         self.win = win
         self.board = [[Cell((x,y)) for x in range(self.w)] for y in range(self.h)]
-        self.cellw,self.cellh = BOARDW//self.w,BOARDH//self.h
+        self.cellw = min(BOARDW//self.w,BOARDH//self.h)
+        self.cellh = self.cellw
+        self.flags = self.mines
         if win is not None:
             if not pygame.font.get_init(): pygame.font.init()
             self.cellfont = pygame.font.Font("C:/Windows/Fonts/seguisym.ttf", min(self.cellw,self.cellh))
+            self.infofont = pygame.font.Font("C:/Windows/Fonts/seguisym.ttf", min(GAPX,GAPY)-1)
     def __getitem__(self, index: tuple[int]):
         return self.board[index[1]][index[0]]
     def __repr__(self):
@@ -125,6 +139,7 @@ class Board:
         if firstclick is None: firstclick = (0,0)
         if mines is None: mines = self.mines
         mines = min(mines,self.w*self.h-1)
+        self.flags = mines
         last = []
         for dx,dy in [(0,1),(0,-1),(1,-1),(1,0),(1,1),(-1,-1),(-1,0),(-1,1)]:
             x,y = firstclick[0]+dx,firstclick[1]+dy
@@ -148,7 +163,7 @@ class Board:
             if c.hint == 0:
                 for ce in c.adj(self.board): clear0(ce)
         clear0(cell)
-    def draw(self, update: bool = False) -> None:
+    def draw(self, update: bool = False, sec: int = 0) -> None:
         """Renders board."""
         if self.win is None: return
         self.win.fill(BG)
@@ -156,8 +171,18 @@ class Board:
             for y in range(self.h):
                 coord = (GAPX + x * self.cellw, GAPY + y * self.cellh)
                 self.board[y][x].draw(self.win,coord,(self.cellw,self.cellh),self.cellfont)
+        if INFO[0]:
+            p = self.infofont.render(f"{SYMBOLS['flag']}: {self.flags}", True, FLAGCOLOR)
+            center = p.get_rect(center=(0,GAPY//2))
+            center.left = GAPX
+            self.win.blit(p,center)
+        if INFO[1]:
+            m,s = sec//60,sec%60
+            p = self.infofont.render(f"{m:02d}:{s:02d}", True, TIMERCOLOR)
+            center = p.get_rect(center=(WIDTH//2,GAPY//2))
+            self.win.blit(p,center)
         if update: pygame.display.update()
 
 
 if __name__ == '__main__':
-    mainloop(16,16,40)
+    mainloop(16,16,10)
