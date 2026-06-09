@@ -62,6 +62,7 @@ class Board:
     def fill(self, pos: tuple, color: tuple, update: bool = True):
         x,y = pos[0]//self.W,pos[1]//self.H
         col = self.red[y][x],self.green[y][x],self.blue[y][x]
+        if col == color: return
         def rec(a: int, b: int):
             cell = (a,b)
             if not 0<=a<self.w or not 0<=b<self.h:
