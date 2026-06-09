@@ -100,6 +100,143 @@ class Board:
         pygame.display.update()
         return (x,y)
     
+    def grayscale(self, update: bool = True):
+        for y in range(self.h):
+            for x in range(self.w):
+                g = min(255,max(0,int(0.299*self.red[y][x]+0.587*self.green[y][x]+0.114*self.blue[y][x])))
+                self.red[y][x],self.green[y][x],self.blue[y][x] = g,g,g
+        self.draw(update=update)
+    
+    def invert(self, update: bool = True):
+        for x in range(self.h):
+            for y in range(self.w):
+                self.red[y][x] = 255-self.red[y][x]
+                self.green[y][x] = 255-self.green[y][x]
+                self.blue[y][x] = 255-self.blue[y][x]
+        self.draw(update=update)
+    
+    def edgedetect(self, update: bool = True):
+        final = [[0 for _ in range(self.w)] for _ in range(self.h)]
+        for x in range(self.h):
+            for y in range(self.w):
+                Y = 0
+                for i in [-1,0,1]:
+                    for j in [-1,0,1]:
+                        if (i,j)==(0,0): X = 8
+                        else: X = -1
+                        try: Y += self.red[y+j][x+i]*X
+                        except IndexError: Y += self.red[y][x]*X
+                final[y][x] = int(min(255,max(0,Y)))
+        self.red, self.green, self.blue = final,final,final
+        self.draw(update=update)
+    
+    def sharpen(self, update: bool = True):
+        r = [[0 for _ in range(self.w)] for _ in range(self.h)]
+        g = [[0 for _ in range(self.w)] for _ in range(self.h)]
+        b = [[0 for _ in range(self.w)] for _ in range(self.h)]
+        for x in range(self.h):
+            for y in range(self.w):
+                R, G, B = 0,0,0
+                for i in [-1,0,1]:
+                    for j in [-1,0,1]:
+                        if (i,j) in [(1,1),(-1,-1),(1,-1),(-1,1)]: X = 0
+                        elif (i,j) in [(1,0),(0,1),(-1,0),(0,-1)]: X = -1
+                        else: X = 5
+                        try:
+                            R += self.red[y+j][x+i]*X
+                            G += self.green[y+j][x+i]*X
+                            B += self.blue[y+j][x+i]*X
+                        except IndexError:
+                            R += self.red[y][x]*X
+                            G += self.green[y][x]*X
+                            B += self.blue[y][x]*X
+                R,G,B = int(min(255,max(0,R))),int(min(255,max(0,G))),int(min(255,max(0,B)))
+                r[y][x],g[y][x],b[y][x] = R,G,B
+        self.red,self.green,self.blue = r,g,b
+        self.draw(update=update)
+    
+    def blur(self, update: bool = True):
+        r = [[0 for _ in range(self.w)] for _ in range(self.h)]
+        g = [[0 for _ in range(self.w)] for _ in range(self.h)]
+        b = [[0 for _ in range(self.w)] for _ in range(self.h)]
+        for x in range(self.h):
+            for y in range(self.w):
+                R, G, B = 0,0,0
+                for i in [-1,0,1]:
+                    for j in [-1,0,1]:
+                        X=1/9
+                        try:
+                            R += self.red[y+j][x+i]*X
+                            G += self.green[y+j][x+i]*X
+                            B += self.blue[y+j][x+i]*X
+                        except IndexError:
+                            R += self.red[y][x]*X
+                            G += self.green[y][x]*X
+                            B += self.blue[y][x]*X
+                R,G,B = int(min(255,max(0,R))),int(min(255,max(0,G))),int(min(255,max(0,B)))
+                r[y][x],g[y][x],b[y][x] = R,G,B
+        self.red,self.green,self.blue = r,g,b
+        self.draw(update=update)
+    
+    def gaussblur(self, update: bool = True):
+        r = [[0 for _ in range(self.w)] for _ in range(self.h)]
+        g = [[0 for _ in range(self.w)] for _ in range(self.h)]
+        b = [[0 for _ in range(self.w)] for _ in range(self.h)]
+        for x in range(self.h):
+            for y in range(self.w):
+                R, G, B = 0,0,0
+                for i in [-1,0,1]:
+                    for j in [-1,0,1]:
+                        if (i,j) in [(1,1),(-1,-1),(1,-1),(-1,1)]: X = 1/16
+                        elif (i,j) in [(1,0),(0,1),(-1,0),(0,-1)]: X = 1/8
+                        else: X = 1/4
+                        try:
+                            R += self.red[y+j][x+i]*X
+                            G += self.green[y+j][x+i]*X
+                            B += self.blue[y+j][x+i]*X
+                        except IndexError:
+                            R += self.red[y][x]*X
+                            G += self.green[y][x]*X
+                            B += self.blue[y][x]*X
+                R,G,B = int(min(255,max(0,R))),int(min(255,max(0,G))),int(min(255,max(0,B)))
+                r[y][x],g[y][x],b[y][x] = R,G,B
+        self.red,self.green,self.blue = r,g,b
+        self.draw(update=update)
+    
+    def sepia(self, update: bool = True):
+        for y in range(self.h):
+            for x in range(self.w):
+                r = max(0,min(255,int(0.393*self.red[y][x]+0.769*self.green[y][x]+0.189*self.blue[y][x])))
+                g = max(0,min(255,int(0.349*self.red[y][x]+0.686*self.green[y][x]+0.168*self.blue[y][x])))
+                b = max(0,min(255,int(0.272*self.red[y][x]+0.534*self.green[y][x]+0.131*self.blue[y][x])))
+                self.red[y][x],self.green[y][x],self.blue[y][x] = r,g,b
+        self.draw(update=update)
+    
+    def colorswap(self, update: bool = True):
+        for y in range(self.h):
+            for x in range(self.w):
+                self.red[y][x],self.green[y][x],self.blue[y][x] = self.blue[y][x],self.red[y][x],self.green[y][x]
+        self.draw(update=update)
+
+    def contrast(self, factor: float = 1.25, update: bool = True):
+        """>1 higher contrast, <1 washed out, 0 = solid gray"""
+        for y in range(self.h):
+            for x in range(self.w):
+                self.red[y][x] = max(0,min(255,128+factor*(self.red[y][x]-128)))
+                self.green[y][x] = max(0,min(255,128+factor*(self.green[y][x]-128)))
+                self.blue[y][x] = max(0,min(255,128+factor*(self.blue[y][x]-128)))
+        self.draw(update=update)
+    
+    def saturate(self, factor: float = 1.25, update: bool = True):
+        """>1 = saturate, <1 desaturate, 0 = grayscale, <0 hue inversion"""
+        for y in range(self.h):
+            for x in range(self.w):
+                Y = 0.299*self.red[y][x]+0.587*self.green[y][x]+0.114*self.blue[y][x]
+                self.red[y][x] = max(0,min(255,Y+factor*(self.red[y][x]-Y)))
+                self.green[y][x] = max(0,min(255,Y+factor*(self.green[y][x]-Y)))
+                self.blue[y][x] = max(0,min(255,Y+factor*(self.blue[y][x]-Y)))
+        self.draw(update=update)
+
     def save(self, file: str = 'paint.txt') -> str:
         with open(file, 'w', encoding='utf-8') as f:
             f.write('.'.join([','.join(str(i) for i in row) for row in self.red])+'\n'+'.'.join([','.join(str(i) for i in row) for row in self.green])+'\n'+'.'.join([','.join(str(i) for i in row) for row in self.blue]))
@@ -125,6 +262,7 @@ def mainloop():
     colors = [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(255,0,255),(0,255,255),(255,128,0),(128,0,255),(255,255,255),(0,0,0)]
     cell = None
     palette = False
+    modeselect = False
     run = True
     while run:
         for event in pygame.event.get():
@@ -180,14 +318,6 @@ def mainloop():
                     if INFO:
                         if palette: print(f"Activated palette. Type a digit 0-9 to save color {selected} to the slot.")
                         else: print("Palette turned off.")
-                elif event.key == pygame.K_x:
-                    for x in range(board.h):
-                        for y in range(board.w):
-                            board.red[y][x] = 255-board.red[y][x]
-                            board.green[y][x] = 255-board.green[y][x]
-                            board.blue[y][x] = 255-board.blue[y][x]
-                    board.draw()
-                    if INFO: print("Inverted board.")
                 elif event.key == pygame.K_f:
                     pos = pygame.mouse.get_pos()
                     try:
@@ -200,6 +330,9 @@ def mainloop():
                         board.draw()
                     except Exception as e:
                         print(f"Unable to load: {e}")
+                elif event.key == pygame.K_m:
+                    modeselect = not modeselect
+                    if INFO: print("Selecting transformation, 0-9." if modeselect else "Selecting colors, 0-9.")
                 elif event.key == pygame.K_s:
                     try:
                         if INFO: print(f"Board saved to '{board.save()}'.")
@@ -214,37 +347,80 @@ def mainloop():
                 elif event.key in [pygame.K_0,pygame.K_1,pygame.K_2,pygame.K_3,pygame.K_4,pygame.K_5,pygame.K_6,pygame.K_7,pygame.K_8,pygame.K_9]:
                     match event.key:
                         case pygame.K_1:
-                            if palette: colors[0] = selected
-                            else: selected = colors[0]
+                            if modeselect:
+                                board.invert()
+                                if INFO: print("Inverted.")
+                            else:
+                                if palette: colors[0] = selected
+                                else: selected = colors[0]
                         case pygame.K_2:
-                            if palette: colors[1] = selected
-                            else: selected = colors[1]
+                            if modeselect:
+                                board.grayscale()
+                                if INFO: print("Grayscaled.")
+                            else:
+                                if palette: colors[1] = selected
+                                else: selected = colors[1]
                         case pygame.K_3:
-                            if palette: colors[2] = selected
-                            else: selected = colors[2]
+                            if modeselect:
+                                board.edgedetect()
+                                if INFO: print("Detected edges.")
+                            else:
+                                if palette: colors[2] = selected
+                                else: selected = colors[2]
                         case pygame.K_4:
-                            if palette: colors[3] = selected
-                            else: selected = colors[3]
+                            if modeselect:
+                                board.sharpen()
+                                if INFO: print("Sharpened.")
+                            else:
+                                if palette: colors[3] = selected
+                                else: selected = colors[3]
                         case pygame.K_5:
-                            if palette: colors[4] = selected
-                            else: selected = colors[4]
+                            if modeselect:
+                                board.blur()
+                                if INFO: print("Blurred.")
+                            else:
+                                if palette: colors[4] = selected
+                                else: selected = colors[4]
                         case pygame.K_6:
-                            if palette: colors[5] = selected
-                            else: selected = colors[5]
+                            if modeselect:
+                                board.gaussblur()
+                                if INFO: print("Gaussian blurred.")
+                            else:
+                                if palette: colors[5] = selected
+                                else: selected = colors[5]
                         case pygame.K_7:
-                            if palette: colors[6] = selected
-                            else: selected = colors[6]
+                            if modeselect:
+                                board.colorswap()
+                                if INFO: print("Swapped color values.")
+                            else:
+                                if palette: colors[6] = selected
+                                else: selected = colors[6]
                         case pygame.K_8:
-                            if palette: colors[7] = selected
-                            else: selected = colors[7]
+                            if modeselect:
+                                board.sepia()
+                                if INFO: print("Sepia'd.")
+                            else:
+                                if palette: colors[7] = selected
+                                else: selected = colors[7]
                         case pygame.K_9:
-                            if palette: colors[8] = selected
-                            else: selected = colors[8]
+                            if modeselect:
+                                board.contrast()
+                                if INFO: print("Enhanced contrast.")
+                            else:
+                                if palette: colors[8] = selected
+                                else: selected = colors[8]
                         case _:
-                            if palette: colors[9] = selected
-                            else: selected = colors[9]
+                            if modeselect:
+                                board.saturate()
+                                if INFO: print("Saturated.")
+                            else:
+                                if palette: colors[9] = selected
+                                else: selected = colors[9]
                     if INFO:
-                        if palette: print("Saved color, palette turned off.")
-                        else: print(f"Selected color: {selected}")
-                    if palette: palette = False
+                        if modeselect:
+                            pass
+                        else:
+                            if palette: print("Saved color, palette turned off.")
+                            else: print(f"Selected color: {selected}")
+                    if not modeselect and palette: palette = False
 mainloop()
