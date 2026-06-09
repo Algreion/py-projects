@@ -76,7 +76,7 @@ class Board:
         self.draw()
 
     def paint(self, pos: tuple, color: tuple, brush: tuple, cell: tuple | None):
-        """Size: radius | Opacity: 0-1 percentage | Types: 0 = pencil"""
+        """Size: radius | Opacity: 0-1 percentage | Types: 0 = pencil, 1 = ?"""
         size, opacity, type = brush
         x,y = pos[0]//self.W,pos[1]//self.H
         if cell == (x,y): return cell
@@ -99,7 +99,19 @@ class Board:
             self.drawcell((c[0],c[1]),update=False)
         pygame.display.update()
         return (x,y)
-        
+    
+    def save(self, file: str = 'paint.txt') -> str:
+        with open(file, 'w', encoding='utf-8') as f:
+            f.write('.'.join([','.join(str(i) for i in row) for row in self.red])+'\n'+'.'.join([','.join(str(i) for i in row) for row in self.green])+'\n'+'.'.join([','.join(str(i) for i in row) for row in self.blue]))
+        return file
+    
+    def load(self, file: str = 'paint.txt') -> str:
+        with open(file, 'r', encoding='utf-8') as f:
+            boards = f.readlines()
+            self.red = [[int(i) for i in row.split(',')] for row in boards[0].split('.')]
+            self.green = [[int(i) for i in row.split(',')] for row in boards[1].split('.')]
+            self.blue = [[int(i) for i in row.split(',')] for row in boards[2].split('.')]
+        return file
 
 def mainloop():
     global win,WIDTH,HEIGHT
@@ -182,6 +194,23 @@ def mainloop():
                         board.fill(pos, selected)
                     except (AttributeError,IndexError):
                         continue
+                elif event.key == pygame.K_a:
+                    try:
+                        if INFO: print(f"Board loaded from '{board.load()}'.")
+                        board.draw()
+                    except Exception as e:
+                        print(f"Unable to load: {e}")
+                elif event.key == pygame.K_s:
+                    try:
+                        if INFO: print(f"Board saved to '{board.save()}'.")
+                    except Exception as e:
+                        print(f"Unable to save: {e}")
+                elif event.key in [pygame.K_r,pygame.K_g,pygame.K_b]:
+                    match event.key:
+                        case pygame.K_r: selected = (255,0,0)
+                        case pygame.K_g: selected = (0,255,0)
+                        case _: selected = (0,0,255)
+                    if INFO: print(f"Color selected: {selected}.")
                 elif event.key in [pygame.K_0,pygame.K_1,pygame.K_2,pygame.K_3,pygame.K_4,pygame.K_5,pygame.K_6,pygame.K_7,pygame.K_8,pygame.K_9]:
                     match event.key:
                         case pygame.K_1:
