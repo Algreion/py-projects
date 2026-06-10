@@ -1,13 +1,17 @@
-import pygame
+
+import os
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
+
+import pygame,random
 
 win = None
 
 HEIGHT = 800
 WIDTH = 800
-W = 64
-H = 64
-BORDER = 0
-BORDERCOL = (200,200,200)
+W = 21
+H = 29
+BORDER = 0 # >0 for cell borders
+BORDERCOL = (200,200,200) # border color
 INFO = True
 
 if W == H:
@@ -109,8 +113,8 @@ class Board:
         self.draw(update=update)
     
     def invert(self, update: bool = True):
-        for x in range(self.h):
-            for y in range(self.w):
+        for y in range(self.h):
+            for x in range(self.w):
                 self.red[y][x] = 255-self.red[y][x]
                 self.green[y][x] = 255-self.green[y][x]
                 self.blue[y][x] = 255-self.blue[y][x]
@@ -118,8 +122,8 @@ class Board:
     
     def edgedetect(self, update: bool = True):
         final = [[0 for _ in range(self.w)] for _ in range(self.h)]
-        for x in range(self.h):
-            for y in range(self.w):
+        for y in range(self.h):
+            for x in range(self.w):
                 Y = 0
                 for i in [-1,0,1]:
                     for j in [-1,0,1]:
@@ -135,8 +139,8 @@ class Board:
         r = [[0 for _ in range(self.w)] for _ in range(self.h)]
         g = [[0 for _ in range(self.w)] for _ in range(self.h)]
         b = [[0 for _ in range(self.w)] for _ in range(self.h)]
-        for x in range(self.h):
-            for y in range(self.w):
+        for y in range(self.h):
+            for x in range(self.w):
                 R, G, B = 0,0,0
                 for i in [-1,0,1]:
                     for j in [-1,0,1]:
@@ -160,12 +164,12 @@ class Board:
         r = [[0 for _ in range(self.w)] for _ in range(self.h)]
         g = [[0 for _ in range(self.w)] for _ in range(self.h)]
         b = [[0 for _ in range(self.w)] for _ in range(self.h)]
-        for x in range(self.h):
-            for y in range(self.w):
+        X = 1/9
+        for y in range(self.h):
+            for x in range(self.w):
                 R, G, B = 0,0,0
                 for i in [-1,0,1]:
                     for j in [-1,0,1]:
-                        X=1/9
                         try:
                             R += self.red[y+j][x+i]*X
                             G += self.green[y+j][x+i]*X
@@ -183,8 +187,8 @@ class Board:
         r = [[0 for _ in range(self.w)] for _ in range(self.h)]
         g = [[0 for _ in range(self.w)] for _ in range(self.h)]
         b = [[0 for _ in range(self.w)] for _ in range(self.h)]
-        for x in range(self.h):
-            for y in range(self.w):
+        for y in range(self.h):
+            for x in range(self.w):
                 R, G, B = 0,0,0
                 for i in [-1,0,1]:
                     for j in [-1,0,1]:
@@ -219,6 +223,11 @@ class Board:
                 self.red[y][x],self.green[y][x],self.blue[y][x] = self.blue[y][x],self.red[y][x],self.green[y][x]
         self.draw(update=update)
 
+    def noise(self, update: bool = True):
+        for y in range(self.h):
+            for x in range(self.w):
+                self.red[y][x],self.green[y][x],self.blue[y][x] = random.randint(1,255),random.randint(1,255),random.randint(1,255)
+        self.draw(update=update)
     def contrast(self, factor: float = 1.25, update: bool = True):
         """>1 higher contrast, <1 washed out, 0 = solid gray"""
         for y in range(self.h):
@@ -246,13 +255,15 @@ class Board:
     def load(self, file: str = 'paint.txt') -> str:
         with open(file, 'r', encoding='utf-8') as f:
             boards = f.readlines()
-            self.red = [[int(i) for i in row.split(',')] for row in boards[0].split('.')]
-            self.green = [[int(i) for i in row.split(',')] for row in boards[1].split('.')]
-            self.blue = [[int(i) for i in row.split(',')] for row in boards[2].split('.')]
+            red = [[int(i) for i in row.split(',')] for row in boards[0].split('.')]
+            if len(red) != self.h or len(red[0]) != self.w: return (len(red[0]),len(red))
+            green = [[int(i) for i in row.split(',')] for row in boards[1].split('.')]
+            blue = [[int(i) for i in row.split(',')] for row in boards[2].split('.')]
+            self.red,self.green,self.blue = red,green,blue
         return file
 
 def mainloop():
-    global win,WIDTH,HEIGHT
+    global win,WIDTH,HEIGHT,INFO
     win = pygame.display.set_mode((WIDTH, HEIGHT))
     board = Board()
     board.draw()
@@ -290,20 +301,28 @@ def mainloop():
                     run = False
                     pygame.quit()
                     return
+                elif event.key == pygame.K_h:
+                    print("""Keybinds: 0-9 = Select color | C = Clear board | K/L = Opacity | Z/X = Brush size
+P = Color picker | F = Fill tool | Q = Save color to slot | M + 0-9 = Select filter
+S = Save | A = Load | I = Toggle Info logs | R/G/B = Red/Green/Blue | Tab: Select random color
+\\: Scramble board""")
                 elif event.key == pygame.K_c:
                     board.makeboard()
                     board.draw()
                     if INFO: print("Cleared board.")
-                elif event.key == pygame.K_k:
+                elif event.key == pygame.K_i:
+                    INFO = not INFO
+                    print(f"Info logs turned {'ON' if INFO else 'OFF'}.")
+                elif event.key == pygame.K_l:
                     brush = (brush[0],min(brush[1]+0.1,1),brush[2])
                     if INFO: print(f"Opacity: {brush[1]*100:.1f}%.")
-                elif event.key == pygame.K_j:
+                elif event.key == pygame.K_k:
                     brush = (brush[0],max(brush[1]-0.1,0),brush[2])
                     if INFO: print(f"Opacity: {brush[1]*100:.1f}%.")
-                elif event.key == pygame.K_i:
+                elif event.key == pygame.K_z:
                     brush = (max(brush[0]//2,1),brush[1],brush[2])
                     if INFO: print(f"Size: {brush[0]} px.")
-                elif event.key == pygame.K_o:
+                elif event.key == pygame.K_x:
                     brush = (min(brush[0]*2,max(WIDTH,HEIGHT)),brush[1],brush[2])
                     if INFO: print(f"Size: {brush[0]} px.")
                 elif event.key == pygame.K_p:
@@ -319,6 +338,12 @@ def mainloop():
                     if INFO:
                         if palette: print(f"Activated palette. Type a digit 0-9 to save color {selected} to the slot.")
                         else: print("Palette turned off.")
+                elif event.key == pygame.K_TAB:
+                    selected = (random.randint(1,255),random.randint(1,255),random.randint(1,255))
+                    if INFO: print(f"Selected random color: {selected}.")
+                elif event.key == pygame.K_BACKSLASH:
+                    board.noise()
+                    if INFO: print("Scrambled board.")
                 elif event.key == pygame.K_f:
                     pos = pygame.mouse.get_pos()
                     try:
@@ -327,8 +352,12 @@ def mainloop():
                         continue
                 elif event.key == pygame.K_a:
                     try:
-                        if INFO: print(f"Board loaded from '{board.load()}'.")
                         board.draw()
+                        file = board.load()
+                        if isinstance(file,tuple): print(f"Size mismatch when loading! Board is {(board.w,board.h)}, file is {file}.")
+                        else:
+                            if INFO: print(f"Board loaded from '{file}'.")
+                            board.draw()
                     except Exception as e:
                         print(f"Unable to load: {e}")
                 elif event.key == pygame.K_m:
@@ -424,4 +453,6 @@ def mainloop():
                             if palette: print("Saved color, palette turned off.")
                             else: print(f"Selected color: {selected}")
                     if not modeselect and palette: palette = False
+
+print("Paint v1.0 - Press H for keybinds.")
 mainloop()
