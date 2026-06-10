@@ -8,16 +8,58 @@ from copy import deepcopy
 
 win = None
 
-#todo: more brushes, load any image file
+LOAD = '' # Will load image file if specified, eg. 'image.png'
+
+SAVEPATH = 'image.png' # Name for a saved image file.
 
 HEIGHT = 800
 WIDTH = 800
-W = 21
-H = 29
+W = 64
+H = 64
 BORDER = 0 # >0 for cell borders
 BORDERCOL = (200,200,200) # border color
 INFO = True
 MAXUNDO = 10 # How many previous board states are saved
+
+RED=GREEN=BLUE=None
+
+def loadimage(file: str) -> bool:
+    try:
+        from PIL import Image
+    except ImportError:
+        print("PIL not installed, can't load image.")
+        return False
+    global HEIGHT,WIDTH,W,H,RED,GREEN,BLUE,LOAD
+    maxwidth = 1920
+    maxheight = 1080
+    try:
+        img = Image.open(file).convert("RGB")
+    except (FileNotFoundError, OSError):
+        print(f'{file} not found.')
+        LOAD = ''
+        return False
+    px = list(img.getdata())
+    width, height = img.size
+    if width > maxwidth or height > maxheight:
+        print(width,height)
+        print(f"Image too large, max size is {(maxwidth, maxheight)}.")
+        LOAD = ''
+        return False
+    RED = [[px[y * width + x][0] for x in range(width)] for y in range(height)]
+    GREEN = [[px[y * width + x][1] for x in range(width)] for y in range(height)]
+    BLUE = [[px[y * width + x][2] for x in range(width)] for y in range(height)]
+    W = width
+    H = height
+    scale = 1 # Upscaling
+    while (scale+1)*width <= maxwidth and (scale+1)*height <= maxheight:
+        scale += 1
+    WIDTH, HEIGHT = width*scale, height*scale
+    return True
+
+if LOAD and loadimage(LOAD):
+    print(f"Image '{LOAD}' loaded successfully.")
+
+if max(W,H)>256: MAXUNDO = min(MAXUNDO,3) # Avoids overhead
 
 if W == H:
     HEIGHT -= HEIGHT%H
@@ -38,10 +80,15 @@ class Board:
         self.colored = colored
         self.makeboard()
 
-    def makeboard(self):
-        self.red = [[255 for _ in range(self.w)] for _ in range(self.h)]
-        self.green = [[255 for _ in range(self.w)] for _ in range(self.h)]
-        self.blue = [[255 for _ in range(self.w)] for _ in range(self.h)]
+    def makeboard(self, cleared: bool = False):
+        if cleared or not LOAD:
+            self.red = [[255 for _ in range(self.w)] for _ in range(self.h)]
+            self.green = [[255 for _ in range(self.w)] for _ in range(self.h)]
+            self.blue = [[255 for _ in range(self.w)] for _ in range(self.h)]
+        else:
+            self.red = RED
+            self.blue = BLUE
+            self.green = GREEN
     
     def draw(self, update: bool = True):
         for h in range(self.h):
@@ -72,18 +119,14 @@ class Board:
         x,y = pos[0]//self.W,pos[1]//self.H
         col = self.red[y][x],self.green[y][x],self.blue[y][x]
         if col == color: return
-        def rec(a: int, b: int):
-            cell = (a,b)
-            if not 0<=a<self.w or not 0<=b<self.h:
-                return
-            if (self.red[b][a],self.green[b][a],self.blue[b][a]) != col: return
-            self.color(cell, color)
-            rec(a+1,b)
-            rec(a-1,b)
-            rec(a,b+1)
-            rec(a,b-1)
-        rec(x,y)
-        self.draw()
+        stack = [(x,y)]
+        while stack:
+            a,b = stack.pop()
+            if not 0<=a<self.w or not 0<=b<self.h: continue
+            if (self.red[b][a],self.green[b][a],self.blue[b][a]) != col: continue
+            self.color((a, b), color)
+            stack.extend([(a+1, b), (a-1, b), (a, b+1), (a, b-1)])
+        self.draw(update=update)
 
     def paint(self, pos: tuple, color: tuple, brush: tuple, cell: tuple | None):
         """Size: radius | Opacity: 0-1 percentage | Types: 0 = pencil, 1 = ?"""
@@ -253,6 +296,7 @@ class Board:
         self.draw(update=update)
 
     def save(self, file: str = 'paint.txt') -> str:
+        """Saves as txt file."""
         with open(file, 'w', encoding='utf-8') as f:
             f.write('.'.join([','.join(str(i) for i in row) for row in self.red])+'\n'+'.'.join([','.join(str(i) for i in row) for row in self.green])+'\n'+'.'.join([','.join(str(i) for i in row) for row in self.blue]))
         return file
@@ -266,6 +310,20 @@ class Board:
             blue = [[int(i) for i in row.split(',')] for row in boards[2].split('.')]
             self.red,self.green,self.blue = red,green,blue
         return file
+    
+    def saveimage(self, file: str = 'image.png'):
+        """Saves as png file using PIL."""
+        try:
+            from PIL import Image
+        except ImportError:
+            print("PIL not installed, can't save image.")
+            return
+        height, width = len(self.red), len(self.red[0])
+        img = Image.new('RGB', (width,height))
+        px = [(self.red[y][x], self.green[y][x], self.blue[y][x]) for y in range(height) for x in range(width)]
+        img.putdata(px)
+        img.save(file)
+        return True
 
 def mainloop():
     global win,WIDTH,HEIGHT,INFO
@@ -315,14 +373,14 @@ def mainloop():
                     pygame.quit()
                     return
                 elif event.key == pygame.K_h:
-                    print("""Keybinds: 0-9 = Select color | C = Clear board | K/L = Opacity | Z/X = Brush size
-P = Color picker | F = Fill tool | Q = Save color to slot | M + 0-9 = Select filter
+                    print(f"""Keybinds: 0-9 = Select color | C = Clear board | K/L = Opacity | Z/X = Brush size
+P = Color picker | F = Fill tool | Q = Save color to slot | M + 0-9 = Select filter | U/I: Undo/Redo
 S = Save | A = Load | D = Toggle Info logs | R/G/B = Red/Green/Blue | Tab: Select random color
-U/I: Undo/Redo | \\: Scramble board""")
+W = Save as {SAVEPATH} | \\: Scramble board | ESC = Quit""")
                 elif event.key == pygame.K_c:
                     undo.append((deepcopy(board.red),deepcopy(board.green),deepcopy(board.blue)))
                     redo.clear()
-                    board.makeboard()
+                    board.makeboard(cleared=True)
                     board.draw()
                     if INFO: print("Cleared board.")
                 elif event.key == pygame.K_d:
@@ -391,9 +449,12 @@ U/I: Undo/Redo | \\: Scramble board""")
                         print(f"Unable to load: {e}")
                 elif event.key == pygame.K_s:
                     try:
-                        if INFO: print(f"Board saved to '{board.save()}'.")
+                        print(f"Board saved to '{board.save()}'.")
                     except Exception as e:
                         print(f"Unable to save: {e}")
+                elif event.key == pygame.K_w:
+                    if board.saveimage(file=SAVEPATH):
+                        print(f"Image saved to '{SAVEPATH}' successfully.")
                 elif event.key == pygame.K_m:
                     modeselect = not modeselect
                     if INFO: print("Selecting transformation, 0-9." if modeselect else "Selecting colors, 0-9.")
