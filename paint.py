@@ -3,8 +3,12 @@ import os
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 
 import pygame,random
+from collections import deque
+from copy import deepcopy
 
 win = None
+
+#todo: more brushes, load any image file
 
 HEIGHT = 800
 WIDTH = 800
@@ -13,6 +17,7 @@ H = 29
 BORDER = 0 # >0 for cell borders
 BORDERCOL = (200,200,200) # border color
 INFO = True
+MAXUNDO = 10 # How many previous board states are saved
 
 if W == H:
     HEIGHT -= HEIGHT%H
@@ -275,6 +280,9 @@ def mainloop():
     cell = None
     palette = False
     modeselect = False
+    undo = deque(maxlen=MAXUNDO)
+    redo = deque(maxlen=MAXUNDO)
+    drawing = False
     run = True
     while run:
         for event in pygame.event.get():
@@ -282,20 +290,25 @@ def mainloop():
                 run = False
                 pygame.quit()
                 return
-            elif event.type == pygame.MOUSEBUTTONUP:
-                cell = None
             elif pygame.mouse.get_pressed()[0]:
                 pos = pygame.mouse.get_pos()
-                try:
+                if 0 <= pos[0] < WIDTH and 0 <= pos[1] < HEIGHT:
+                    if not drawing:
+                        undo.append((deepcopy(board.red),deepcopy(board.green),deepcopy(board.blue)))
+                        redo.clear()
+                        drawing = True
                     cell = board.paint(pos, selected, brush, cell)
-                except (AttributeError,IndexError):
-                    continue
+            elif event.type == pygame.MOUSEBUTTONUP:
+                cell = None
+                drawing = False
             elif pygame.mouse.get_pressed()[2]:
                 pos = pygame.mouse.get_pos()
-                try:
+                if 0 <= pos[0] < WIDTH and 0 <= pos[1] < HEIGHT:
+                    if not drawing:
+                        undo.append((deepcopy(board.red),deepcopy(board.green),deepcopy(board.blue)))
+                        redo.clear()
+                        drawing = True
                     cell = board.paint(pos, eraser, eraserbrush, cell)
-                except (AttributeError,IndexError):
-                    continue
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     run = False
@@ -304,13 +317,15 @@ def mainloop():
                 elif event.key == pygame.K_h:
                     print("""Keybinds: 0-9 = Select color | C = Clear board | K/L = Opacity | Z/X = Brush size
 P = Color picker | F = Fill tool | Q = Save color to slot | M + 0-9 = Select filter
-S = Save | A = Load | I = Toggle Info logs | R/G/B = Red/Green/Blue | Tab: Select random color
-\\: Scramble board""")
+S = Save | A = Load | D = Toggle Info logs | R/G/B = Red/Green/Blue | Tab: Select random color
+U/I: Undo/Redo | \\: Scramble board""")
                 elif event.key == pygame.K_c:
+                    undo.append((deepcopy(board.red),deepcopy(board.green),deepcopy(board.blue)))
+                    redo.clear()
                     board.makeboard()
                     board.draw()
                     if INFO: print("Cleared board.")
-                elif event.key == pygame.K_i:
+                elif event.key == pygame.K_d:
                     INFO = not INFO
                     print(f"Info logs turned {'ON' if INFO else 'OFF'}.")
                 elif event.key == pygame.K_l:
@@ -342,15 +357,29 @@ S = Save | A = Load | I = Toggle Info logs | R/G/B = Red/Green/Blue | Tab: Selec
                     selected = (random.randint(1,255),random.randint(1,255),random.randint(1,255))
                     if INFO: print(f"Selected random color: {selected}.")
                 elif event.key == pygame.K_BACKSLASH:
+                    undo.append((deepcopy(board.red),deepcopy(board.green),deepcopy(board.blue)))
+                    redo.clear()
                     board.noise()
                     if INFO: print("Scrambled board.")
                 elif event.key == pygame.K_f:
+                    undo.append((deepcopy(board.red),deepcopy(board.green),deepcopy(board.blue)))
+                    redo.clear()
                     pos = pygame.mouse.get_pos()
                     try:
                         board.fill(pos, selected)
                     except (AttributeError,IndexError):
                         continue
+                elif event.key == pygame.K_u and undo:
+                    redo.append((deepcopy(board.red), deepcopy(board.green), deepcopy(board.blue)))
+                    board.red,board.green,board.blue = undo.pop()
+                    board.draw()
+                elif event.key == pygame.K_i and redo:
+                    undo.append((deepcopy(board.red), deepcopy(board.green), deepcopy(board.blue)))
+                    board.red, board.green, board.blue = redo.pop()
+                    board.draw()
                 elif event.key == pygame.K_a:
+                    undo.append((deepcopy(board.red),deepcopy(board.green),deepcopy(board.blue)))
+                    redo.clear()
                     try:
                         board.draw()
                         file = board.load()
@@ -360,14 +389,14 @@ S = Save | A = Load | I = Toggle Info logs | R/G/B = Red/Green/Blue | Tab: Selec
                             board.draw()
                     except Exception as e:
                         print(f"Unable to load: {e}")
-                elif event.key == pygame.K_m:
-                    modeselect = not modeselect
-                    if INFO: print("Selecting transformation, 0-9." if modeselect else "Selecting colors, 0-9.")
                 elif event.key == pygame.K_s:
                     try:
                         if INFO: print(f"Board saved to '{board.save()}'.")
                     except Exception as e:
                         print(f"Unable to save: {e}")
+                elif event.key == pygame.K_m:
+                    modeselect = not modeselect
+                    if INFO: print("Selecting transformation, 0-9." if modeselect else "Selecting colors, 0-9.")
                 elif event.key in [pygame.K_r,pygame.K_g,pygame.K_b]:
                     match event.key:
                         case pygame.K_r: selected = (255,0,0)
@@ -375,6 +404,9 @@ S = Save | A = Load | I = Toggle Info logs | R/G/B = Red/Green/Blue | Tab: Selec
                         case _: selected = (0,0,255)
                     if INFO: print(f"Color selected: {selected}.")
                 elif event.key in [pygame.K_0,pygame.K_1,pygame.K_2,pygame.K_3,pygame.K_4,pygame.K_5,pygame.K_6,pygame.K_7,pygame.K_8,pygame.K_9]:
+                    if modeselect:
+                        undo.append((deepcopy(board.red),deepcopy(board.green),deepcopy(board.blue)))
+                        redo.clear()
                     match event.key:
                         case pygame.K_1:
                             if modeselect:
