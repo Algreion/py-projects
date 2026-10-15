@@ -1,5 +1,4 @@
 
-
 class Fraction:
     def __init__(self, a: int | float | str, b: int | None = None, precision: int = 1000000):
         """Fraction object that doesn't utilize any division at all."""
@@ -44,7 +43,7 @@ class Fraction:
     
     def __pow__(self, power: int):
         if isinstance(power,Fraction):
-            power = power._num if power._den == 1 else power._evaluate()
+            power = power._num if power._den == 1 else power.evaluate()
         if not isinstance(power,int):
             raise TypeError('Only integers accepted for exponentiation.')
         P = power < 0
@@ -158,3 +157,6 @@ class Fraction:
                 best_a, best_b = a,b
             if best_err == 0: break
         return best_a,best_b
+
+class Frac(Fraction):
+    pass
