@@ -968,10 +968,10 @@ class Piece:
             case 'pawn':
                 if self.color==1:
                     options.append((0,1))
-                    if y == 1: options.append((0,2))
+                    if y == 1 and self.board.lookup((x,y+1)) is None: options.append((0,2))
                 elif self.color==0:
                     options.append((0,-1))
-                    if y == self.board.H-2: options.append((0,-2))
+                    if y == self.board.H-2 and self.board.lookup((x,y-1)) is None: options.append((0,-2))
             case 'knight': options = d
             case 'rook' | 'bishop' | 'queen':
                 for (dx,dy) in d:
@@ -1987,5 +1987,3 @@ def pyloop():
 if __name__ == '__main__':
     if TERMINAL: superloop()
     else: pyloop()
-
-# put them all in HELP, then fix terminal version
