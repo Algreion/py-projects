@@ -1,11 +1,7 @@
-# Terminal: superloop() | Interactive: pyloop()
-TERMINAL = False
-
 pprint = print
 from rich import print
 import os,requests,random,time
-os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
-import pygame
+from pathlib import Path
 
 RICH = True
 BLACK = 'cyan'
@@ -14,6 +10,7 @@ EMPTY = 'bold'
 
 LOGS = False
 SEP = "_______________________________"
+SAVEPATH = "saves/chessboard.txt"
 
 ADMIN = True
 DEBUGGING = False
@@ -21,42 +18,8 @@ TIMEOUT = 2 # Seconds for API request
 HISTORY = True
 WAIT = 0 # Minimum bot thinking time
 
-# PyGame variables
-WIDTH, HEIGHT = 800,800
-GAPX,GAPY = 15,15
-BG = (45,34,24)
-LIGHT = (240, 217, 181)
-DARK = (181, 136, 99)
-SWAPPING = False
-BORDER = True
-SQUAREBORDER_COLOR = (45, 34, 24)
-SQUAREBORDER_WIDTH = 1
-BLACKPIECE = (0,0,0)
-WHITEPIECE = (255,255,255)
-MOVEOPTION = (181, 217, 240)
-DMOVEOPTION = (99, 136, 181)
-MOVEOPTION_BORDER = 0
-CAPTUREOPTION = (240, 181, 181)
-DCAPTUREOPTION = (181, 99, 99)
-CAPTUREOPTION_BORDER = 0
-HIGHLIGHT = (0,255,0)
-HIGHLIGHT_BORDER = 4
-HIGHLIGHT2 = (181, 240, 181)
-DHIGHLIGHT2 = (99, 181, 99)
-HIGHLIGHT2_BORDER = 0
-PROMOCOLOR = (255,215,0)
-PROMOINFO = (78,45,0)
-INFO = True
-INFODARK = LIGHT
-INFOLIGHT = DARK
-MENUBG = (255,255,255)
-MENUFONT = (0,0,0)
-IMPOSSIBLE = (255,0,0)
-MENUBUTTONS = (0,0,0)
-ENDFONT = (0,200,255)
-ENDBUTTONS = (255,255,255)
-ENDBUTTONSFONT = (0,0,0)
-HINT = (255,215,0)
+cur = Path(__file__).resolve().parent
+if SAVEPATH: SAVEPATH = cur/SAVEPATH
 
 def api(fen: str, ev: bool = False, json: bool = False) -> str:
     """Sends FEN board to API and returns best move. ev=True returns eval."""
@@ -231,7 +194,7 @@ class Board:
             self[square1] = piece1
             self[square2] = piece2
         return res
-    def save(self, file: str = 'board.txt', stats: list = []) -> bool:
+    def save(self, file: str = SAVEPATH, stats: list = []) -> bool:
         """Save board state to text file. Stats also saves info: [Turn, Info, Swap]."""
         board = self.simplified()+'\n'
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),file), 'w') as f:
@@ -240,7 +203,7 @@ class Board:
             f.write('\n&'+','.join(['' if c is None else self.code(c) for c in [self.white_enpassant,self.black_enpassant]]))
             if stats: f.write('\n!'+' '.join([str(s) for s in stats]))
         return True
-    def load(self, file: str = 'board.txt') -> bool | list:
+    def load(self, file: str = SAVEPATH) -> bool | list:
         try:
             with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),file), 'r') as f:
                 D = self.simplified_dict_invert
@@ -527,6 +490,7 @@ class Board:
                     elif sym.lower() == 'e': sym = 'r' if sym.islower() else 'R'
                     elif sym.lower() == 't': sym = 'n' if sym.islower() else 'N'
                     elif sym.lower() == 'd': sym = 'q' if sym.islower() else 'Q'
+                    elif sym.lower() == 'x': sym = 'n' if sym.islower() else 'N'
                     else: sym = ''
                 if sym == "": empty += 1
                 else:
@@ -769,12 +733,12 @@ Chess commands: castle | draw | surrender || Commands: info | save (file) | swap
                 print('\n'+self.show(reverse,bool(info),bool(RICH)))
                 continue
             elif move.split()[0] in ['save','export']:
-                file = 'board.txt' if len(move.split())==1 else move.split()[1]
+                file = SAVEPATH if len(move.split())==1 else move.split()[1]
                 if self.save(file,stats): print(f"Board saved to '{file}' successfully.\n")
                 else: print("Error. Unable to save the board.")
                 continue
             elif move.split()[0] in ['load','import'] and ADMIN:
-                file = 'board.txt' if len(move.split())==1 else move.split()[1]
+                file = SAVEPATH if len(move.split())==1 else move.split()[1]
                 new = self.load(file)
                 if new: print("Board loaded successfully.")
                 else:
@@ -856,6 +820,8 @@ Chess commands: castle | draw | surrender || Commands: info | save (file) | swap
                         case 'forcedraw' | 'fdraw': return -1
                         case 'set':
                             square, name = move[1],move[2]
+                            if name in self.simplified_dict.values():
+                                name = [k for k,v in self.simplified_dict.items() if v==name][0]
                             col = color if len(move) == 3 else move[3]
                             if col in ['w','white','1']: col = 1
                             elif col in ['b','black','0']: col = 0
@@ -1039,8 +1005,8 @@ class Piece:
 
 def superloop():
     """Full terminal experience."""
-    global ADMIN,DEBUG
-    HELP = "Options:\n1. Player vs player. | 2. Player vs bot. | 3. Load previous game. | 4. Stats. | 0. Quit. || Cmds: 'admin', 'debug'"
+    global ADMIN,DEBUGGING
+    HELP = "Options:\n1. Player vs player. | 2. Player vs bot. | 3. Load previous game. | 4. Stats. | 0. Quit.\nCMDS: 'admin', 'debug'"
     print("[bold underline]PyChess[/bold underline]\n")
     pprint(HELP)
     white, black, total, botwins = 0,0,0,0
@@ -1106,12 +1072,12 @@ def superloop():
                     else: white += 1
                 total += 1
             case '3' | 'load':
-                default = 'board.txt'
+                default = SAVEPATH
                 try: file = input(f"Press enter to load '{default}', or input file name: ").lower()
                 except:
                     print("Quitting...")
                     break
-                if not file: file = 'board.txt'
+                if not file: file = SAVEPATH
                 elif file in ['x','cancel']:
                     print("Cancelled.")
                     continue
@@ -1135,8 +1101,8 @@ def superloop():
                 ADMIN = not ADMIN
                 print(f"ADMIN toggled {'ON' if ADMIN else 'OFF'}.")
             case 'debug':
-                DEBUG = not DEBUG
-                print(f"DEBUG toggled {'ON' if DEBUG else 'OFF'}.")
+                DEBUGGING = not DEBUGGING
+                print(f"DEBUGGING toggled {'ON' if DEBUGGING else 'OFF'}.")
             case 'help' | 'h':
                 pprint(HELP)
             case '0' | 'quit' | 'x':
@@ -1149,841 +1115,5 @@ def superloop():
             case _:
                 print("Unknown input. Type 'help'.")
 
-# ____________________________________________________________________________________________________________________________
-pygame.font.init()
-
-WIDTH -= (WIDTH-2*GAPX)%8
-HEIGHT -= (HEIGHT-2*GAPY)%8
-BOARDW,BOARDH = WIDTH-2*GAPX,HEIGHT-2*GAPY
-WBG = WHITEPIECE
-BBG = BLACKPIECE
-
-class PyBoard(Board):
-    def __init__(self, win, filled: bool = False):
-        super().__init__(filled=filled)
-        self.win = win
-        self.w, self.h = BOARDW//8,BOARDH//8
-        self.piecefont = pygame.font.Font("C:/Windows/Fonts/seguisym.ttf", min(self.w,self.h))
-        self.infofont = pygame.sysfont.SysFont("arial",min(self.w,self.h)//5)
-        self.menufont = pygame.sysfont.SysFont("verdana",min(WIDTH,HEIGHT)//10)
-        self.menuoptionfont = pygame.sysfont.SysFont("arial",min(WIDTH,HEIGHT)//15)
-        self.font = pygame.sysfont.SysFont("verdana",min(WIDTH,HEIGHT)//30)
-        self.swapped = False
-        self.info = True
-    def draw(self, update: bool = False, col: int = 1):
-        """Renders the full board."""
-        c = BG if SWAPPING else (WBG if col else BBG)
-        self.win.fill(c)
-        for h in range(8):
-            for w in range(8):
-                self.drawsquare((w,h))
-        if update: pygame.display.update()
-    def drawmenu(self, stats: tuple | None = None, update: bool = True, cont: tuple | None = None) -> list:
-        """Renders initial menu. Stats = (white wins, black wins). Returns list of buttons."""
-        buttons = []
-        self.win.fill(MENUBG)
-        i = self.menufont.render("PyChess", True, MENUFONT)
-        surf = i.get_rect(center=(WIDTH//2,HEIGHT//5))
-        self.win.blit(i,surf)
-        buttonwidth = WIDTH//2
-        H = 0 if cont is None else 1
-        if stats is not None:
-            w, b = stats
-            wperc = 0 if w+b == 0 else 100*w/(w+b)
-            bperc = 0 if w+b == 0 else 100-wperc
-            i = self.font.render(f"White wins: {w} ({wperc:.0f}%) | Black wins: {b} ({bperc:.0f}%)", True, MENUFONT)
-            self.win.blit(i,i.get_rect(center=(WIDTH//2,3*HEIGHT//10)))
-        i = self.menuoptionfont.render("PLAY", True, MENUFONT)
-        surf = i.get_rect(center=(WIDTH//2,(4+H)*HEIGHT//10))
-        self.win.blit(i, surf)
-        center, surf.width = surf.center, buttonwidth
-        surf.center = center
-        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
-        buttons.append(surf)
-        i = self.menuoptionfont.render("PLAY VS BOT", True, MENUFONT)
-        surf = i.get_rect(center=(WIDTH//2,(5+H)*HEIGHT//10))
-        self.win.blit(i, surf)
-        center, surf.width = surf.center, buttonwidth
-        surf.center = center
-        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
-        buttons.append(surf)
-        i = self.menuoptionfont.render("LOAD", True, MENUFONT)
-        surf = i.get_rect(center=(WIDTH//2,(6+H)*HEIGHT//10))
-        self.win.blit(i, surf)
-        center, surf.width = surf.center, buttonwidth
-        surf.center = center
-        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
-        buttons.append(surf)
-        i = self.menuoptionfont.render("HELP", True, MENUFONT)
-        surf = i.get_rect(center=(WIDTH//2,(7+H)*HEIGHT//10))
-        self.win.blit(i, surf)
-        center, surf.width = surf.center, buttonwidth
-        surf.center = center
-        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
-        buttons.append(surf)
-        i = self.menuoptionfont.render("QUIT", True, MENUFONT)
-        surf = i.get_rect(center=(WIDTH//2,(8+H)*HEIGHT//10))
-        self.win.blit(i, surf)
-        center, surf.width = surf.center, buttonwidth
-        surf.center = center
-        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
-        buttons.append(surf)
-        if cont is not None:
-            i = self.menuoptionfont.render("CONTINUE", True, MENUFONT)
-            surf = i.get_rect(center=(WIDTH//2,4*HEIGHT//10))
-            self.win.blit(i, surf)
-            center, surf.width = surf.center, buttonwidth
-            surf.center = center
-            pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
-            buttons.append(surf)
-        i = self.font.render("By Algreion", True, MENUFONT)
-        self.win.blit(i, i.get_rect(center=(WIDTH-i.get_width()//1.5,9.5*HEIGHT//10)))
-        if ADMIN:
-            i = self.font.render("Admin Mode", True, (255,0,0))
-            self.win.blit(i, i.get_rect(center=(WIDTH-i.get_width()//1.5,0.5*HEIGHT//10)))
-        if update: pygame.display.update()
-        return buttons
-    def drawend(self, result: int) -> list:
-        """Renders screen at end of match. Returns list of buttons."""
-        buttons = []
-        self.draw()
-        w, h = self.win.get_size()
-        small = pygame.transform.smoothscale(self.win, (w//3, h//3))
-        blurred = pygame.transform.smoothscale(small, (w, h))
-        self.win.blit(blurred, (0, 0))
-        result1 = "CHECKMATE" if result in [0,1] else "STALEMATE"
-        i = self.menufont.render(result1, True, ENDFONT)
-        surf = i.get_rect(center=(WIDTH//2,3*HEIGHT//10))
-        self.win.blit(i,surf)
-        result1 = "White wins!" if result == 1 else "Black wins!" if result == 0 else "It's a draw."
-        col = WHITEPIECE if result == 1 else BLACKPIECE
-        i = self.menufont.render(result1, True, col)
-        surf = i.get_rect(center=(WIDTH//2,4.5*HEIGHT//10))
-        self.win.blit(i,surf)
-        buttonwidth = WIDTH//2
-        i = self.menuoptionfont.render("PLAY AGAIN", True, ENDBUTTONSFONT)
-        surf = i.get_rect(center=(WIDTH//2,6*HEIGHT//10))
-        text = surf.copy()
-        center, surf.width = surf.center, buttonwidth
-        surf.center = center
-        pygame.draw.rect(self.win, ENDBUTTONS, surf.inflate(0, WIDTH//40), 0)
-        self.win.blit(i, text)
-        buttons.append(surf)
-        i = self.menuoptionfont.render("MENU", True, ENDBUTTONSFONT)
-        surf = i.get_rect(center=(WIDTH//2,7.5*HEIGHT//10))
-        text = surf.copy()
-        center, surf.width = surf.center, buttonwidth
-        surf.center = center
-        pygame.draw.rect(self.win, ENDBUTTONS, surf.inflate(0, WIDTH//40), 0)
-        self.win.blit(i, text)
-        buttons.append(surf)
-        pygame.display.update()
-        return buttons
-    def drawpromo(self, square: str) -> list:
-        """Handles pawn promotion rendering. drawsquare requires promo=(type: str, color: int, text: str)"""
-        square = self.ind(square)
-        piece = self.lookup(square)
-        if piece is None: return []
-        c = piece.color
-        xcoord = square[0]+1 if square[0] != 7 else 6
-        squares = [(xcoord,i) for i in range(4)] if square[1] == 0 else [(xcoord,7-i) for i in range(4)]
-        for i,O in enumerate([('queen',c,'1'),('knight',c,'2'),('rook',c,'3'),('bishop',c,'4')]):
-            self.drawsquare(squares[i],promo=O)
-        return squares
-    def drawsquare(self, location: tuple, highlight: bool = False, moveoption: bool = False, piece: bool = True, hl2: bool = False, captureoption: bool = False, promo: tuple | None = None, hint: int = -1):
-        """Draws a single square. Location is (x,y)."""
-        w,h = location
-        col = DARK if (w+h)%2 else LIGHT
-        if promo is not None: col = PROMOCOLOR
-        coord = (GAPX+w*self.w,GAPY+h*self.h if self.swapped else GAPY+BOARDH-(1+h)*self.h)
-        pygame.draw.rect(self.win,col,(coord[0],coord[1],self.w,self.h))
-        if BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
-        if moveoption and self.info:
-            pygame.draw.rect(self.win,DMOVEOPTION if (w+h)%2 else MOVEOPTION,(coord[0],coord[1],self.w,self.h),MOVEOPTION_BORDER)
-            if MOVEOPTION_BORDER == 0 and BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
-        if captureoption and self.info:
-            pygame.draw.rect(self.win,DCAPTUREOPTION if (w+h)%2 else CAPTUREOPTION,(coord[0],coord[1],self.w,self.h),CAPTUREOPTION_BORDER)
-            if CAPTUREOPTION_BORDER == 0 and BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
-        if highlight:
-            pygame.draw.rect(self.win,HIGHLIGHT,(coord[0],coord[1],self.w,self.h),HIGHLIGHT_BORDER)
-            if HIGHLIGHT_BORDER == 0 and BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
-        if hl2:
-            pygame.draw.rect(self.win,DHIGHLIGHT2 if (w+h)%2 else HIGHLIGHT2,(coord[0],coord[1],self.w,self.h),HIGHLIGHT2_BORDER)
-            if HIGHLIGHT2_BORDER == 0 and BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
-        if hint>=0:
-            pygame.draw.rect(self.win,HINT,(coord[0],coord[1],self.w,self.h),hint)
-            if hint == 0 and BORDER: pygame.draw.rect(self.win,SQUAREBORDER_COLOR,(coord[0],coord[1],self.w,self.h),SQUAREBORDER_WIDTH)
-        p = self[(w,h)] if promo is None else Piece(promo[0],promo[1])
-        if p is not None and piece:
-            p = self.piecefont.render(p.symbol, True, WHITEPIECE if p.color else BLACKPIECE)
-            center = p.get_rect(center=(coord[0]+self.w//2,coord[1]+self.h//2-SQUAREBORDER_WIDTH))
-            self.win.blit(p,center)
-        if promo is not None:
-            i = self.infofont.render(promo[2], True, PROMOINFO)
-            center = i.get_rect(center=(coord[0]+self.w//10,coord[1]+3*self.h//20))
-            self.win.blit(i,center)
-            return
-        if w == 0 and INFO:
-            nums = '12345678'
-            i = self.infofont.render(nums[h], True, INFODARK if col == DARK else INFOLIGHT)
-            center = i.get_rect(center=(coord[0]+self.w//10,coord[1]+3*self.h//20))
-            self.win.blit(i,center)
-        if (h == 7 if self.swapped else h == 0) and INFO:
-            letters = 'abcdefgh'
-            i = self.infofont.render(letters[w], True, INFODARK if col == DARK else INFOLIGHT)
-            center = i.get_rect(center=(coord[0]+9*self.w//10,coord[1]+17*self.h//20))
-            self.win.blit(i,center)
-    def drawoptions(self, square: tuple, options: list, captureoptions: list) -> None | list:
-        p = self.lookup(square)
-        if p is None or options is None: return []
-        triggers = []
-        c,lc = None,None
-        if 'castle' in options:
-            c = (6,0) if p.color == 1 else (6,7)
-            self.drawsquare(c,moveoption=True)
-        if 'longcastle' in options:
-            lc = (2,0) if p.color == 1 else (2,7)
-            self.drawsquare(lc,moveoption=True)
-        if c is not None: triggers.append(c)
-        if lc is not None: triggers.append(lc)
-        for o in options:
-            if type(o) == tuple:
-                triggers.append(o)
-                self.drawsquare(o,moveoption=True)
-        for o in captureoptions:
-            self.drawsquare(o,captureoption=True)
-        return triggers+captureoptions
-    def getsquare(self, pos: tuple) -> tuple | None:
-        """Returns the square index from the mouse position, or None."""
-        X,Y = pos
-        x,y = (X-GAPX)//self.w, (Y-GAPY)//self.h if self.swapped else -1-((Y-GAPY-BOARDH)//self.h)
-        return (x,y) if 0<=x<8 and 0<=y<8 else None
-    def drawbot(self, col: bool = False) -> int:
-        """Renders bot settings. col=False: difficulty, col=True: Player color."""
-        buttons = []
-        words = ["Player's Color","WHITE","BLACK","RANDOM"] if col else ["Bot Level", "EASY","MEDIUM","HARD"]
-        self.win.fill(MENUBG)
-        i = self.menufont.render(words[0], True, MENUFONT)
-        surf = i.get_rect(center=(WIDTH//2,HEIGHT//5))
-        self.win.blit(i,surf)
-        buttonwidth = WIDTH//2
-        i = self.menuoptionfont.render(words[1], True, MENUFONT)
-        surf = i.get_rect(center=(WIDTH//2,4*HEIGHT//10))
-        self.win.blit(i, surf)
-        center, surf.width = surf.center, buttonwidth
-        surf.center = center
-        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
-        buttons.append(surf)
-        i = self.menuoptionfont.render(words[2], True, MENUFONT)
-        surf = i.get_rect(center=(WIDTH//2,5*HEIGHT//10))
-        self.win.blit(i, surf)
-        center, surf.width = surf.center, buttonwidth
-        surf.center = center
-        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
-        buttons.append(surf)
-        i = self.menuoptionfont.render(words[3], True, MENUFONT)
-        surf = i.get_rect(center=(WIDTH//2,6*HEIGHT//10))
-        self.win.blit(i, surf)
-        center, surf.width = surf.center, buttonwidth
-        surf.center = center
-        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(0, WIDTH//200), 1)
-        buttons.append(surf)
-        if not col:
-            i = self.menuoptionfont.render("EXTREME", True, IMPOSSIBLE)
-            surf = i.get_rect(center=(WIDTH//2,7*HEIGHT//10))
-            self.win.blit(i, surf)
-            center, surf.width = surf.center, buttonwidth
-            surf.center = center
-            pygame.draw.rect(self.win, IMPOSSIBLE, surf.inflate(0, WIDTH//200), 1)
-            buttons.append(surf)
-        pygame.display.update()
-        return buttons
-    def drawsurr(self, col: int, draw: bool = False) -> list:
-        """Renders resign/draw confirmation."""
-        buttons = []
-        self.draw()
-        w, h = self.win.get_size()
-        small = pygame.transform.smoothscale(self.win, (w//3, h//3))
-        blurred = pygame.transform.smoothscale(small, (w, h))
-        self.win.blit(blurred, (0, 0))
-        if draw: i = self.menuoptionfont.render(f"{'White' if col==1 else 'Black'} offers a draw.", True, WHITEPIECE if col == 0 else BLACKPIECE)
-        else: i = self.menufont.render("Resign?", True, WHITEPIECE if col == 1 else BLACKPIECE)
-        surf = i.get_rect(center=(WIDTH//2,4.5*HEIGHT//10))
-        self.win.blit(i,surf)
-        buttonwidth = WIDTH//2
-        i = self.menuoptionfont.render("ACCEPT" if draw else "RESIGN", True, ENDBUTTONSFONT)
-        surf = i.get_rect(center=(WIDTH//2,6*HEIGHT//10))
-        text = surf.copy()
-        center, surf.width = surf.center, buttonwidth
-        surf.center = center
-        pygame.draw.rect(self.win, ENDBUTTONS, surf.inflate(0, WIDTH//40), 0)
-        self.win.blit(i, text)
-        buttons.append(surf)
-        i = self.menuoptionfont.render("REFUSE" if draw else "CANCEL", True, ENDBUTTONSFONT)
-        surf = i.get_rect(center=(WIDTH//2,7.5*HEIGHT//10))
-        text = surf.copy()
-        center, surf.width = surf.center, buttonwidth
-        surf.center = center
-        pygame.draw.rect(self.win, ENDBUTTONS, surf.inflate(0, WIDTH//40), 0)
-        self.win.blit(i, text)
-        buttons.append(surf)
-        pygame.display.update()
-        return buttons
-    def drawhelp(self) -> pygame.rect:
-        """Renders keybind help screen. Returns 'back' button."""
-        self.win.fill(MENUBG)
-        text = "Menu Keybinds:\nA = Toggle Admin\nC = Toggle Console Logs\n\nMatch Keybinds:\nS = Toggle board swapping | I = Toggle move info\nQ = Resign | D = Offer draw | U = Undo | R = Redo\nEscape = Menu"
-        text += "\n\nAdmin:\nO = Override color | L = Lock turn | N = Random move\nH = Hint | E = eval | U/R = Undo/Redo (player)\nK = Delete piece | M = Move highlighted\n0/1 = Convert piece to black/white\nP = Add piece. Press Q/R/B/N/P, custom: K/A/E/D/X\nG = Save board | F = Print FEN"
-        y = HEIGHT//20
-        for line in text.splitlines():
-            i = self.font.render(line, True, MENUFONT)
-            surf = i.get_rect(center=(WIDTH//2,y))
-            self.win.blit(i, surf)
-            y += HEIGHT//18
-        i = self.menuoptionfont.render("BACK", True, MENUFONT)
-        surf = i.get_rect(center=(WIDTH//10,9.5*HEIGHT//10))
-        text = surf.copy()
-        center = surf.center
-        surf.center = center
-        pygame.draw.rect(self.win, MENUBUTTONS, surf.inflate(WIDTH//40, HEIGHT//40), 1)
-        self.win.blit(i, text)
-        pygame.display.update()
-        return surf
-
-def pyloop():
-    """Handles the entire interactive loop."""
-    global ADMIN,LOGS,SWAPPING,HISTORY
-    window = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("PyChess")
-    board = PyBoard(window)
-    running = True
-    color = 1
-    MOVE = None
-    COLOROVERRIDE = False
-    LOCKTURN = False
-    white, black, total = 0, 0, 0
-    menu = True
-    settings, match, endscreen = False, False, False
-    result = -1
-    save = None # (color,promotion)
-    botplay = None # (botcolor,botlogic)
-    forceres = None # 1 = white win, 0 = black win, -1 = draw
-    while running:
-        if menu: buttons = board.drawmenu((white,black),cont = save)
-        while menu:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    if LOGS: pprint("Quitting...")
-                    pygame.quit()
-                    return
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_a:
-                        ADMIN = not ADMIN
-                        if LOGS: print(f"ADMIN toggled {"ON" if ADMIN else "OFF"}")
-                        board.drawmenu((white,black),cont = save)
-                    elif event.key == pygame.K_c:
-                        LOGS = not LOGS
-                        print(f"LOGS toggled {"ON" if LOGS else "OFF"}")
-                    elif event.key in [pygame.K_ESCAPE,pygame.K_q]:
-                        if LOGS: pprint("Quitting...")
-                        pygame.quit()
-                        return
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    mx,my = pygame.mouse.get_pos()
-                    if buttons[0].collidepoint(mx,my): # Play
-                        color = 1
-                        MOVE = None
-                        save = None
-                        result = -1
-                        botplay = None
-                        board.setup()
-                        menu, match = False, True
-                        HISTORY=True
-                    elif buttons[1].collidepoint(mx,my): # Play vs bot
-                        menu = False
-                        difficulty = board.drawbot()
-                        logic = 0
-                        while True:
-                            for event in pygame.event.get():
-                                if event.type == pygame.QUIT:
-                                    if LOGS: pprint("Quitting...")
-                                    pygame.quit()
-                                    return
-                                elif event.type == event.type==pygame.KEYDOWN:
-                                    if event.key == pygame.K_1:
-                                        logic = 3
-                                    elif event.key in [pygame.K_2,pygame.K_SPACE]:
-                                        logic = 1
-                                    elif event.key == pygame.K_3:
-                                        logic = 2
-                                    elif event.key == pygame.K_4:
-                                        logic = 4
-                                    elif event.key == pygame.K_ESCAPE:
-                                        logic = 100
-                                        menu = True
-                                        board.drawmenu((white,black),cont = save)
-                                elif event.type == pygame.MOUSEBUTTONDOWN:
-                                    mx,my = pygame.mouse.get_pos()
-                                    if difficulty[0].collidepoint(mx,my): # Easy
-                                        logic = 3
-                                    elif difficulty[1].collidepoint(mx,my): # Medium
-                                        logic = 1
-                                    elif difficulty[2].collidepoint(mx,my): # Hard
-                                        logic = 2
-                                    elif difficulty[3].collidepoint(mx,my): # API
-                                        logic = 4
-                            if logic != 0: break
-                        if not running or menu: break
-                        difficulty = board.drawbot(col=True)
-                        col = -1
-                        while True:
-                            for event in pygame.event.get():
-                                if event.type == pygame.QUIT:
-                                    if LOGS: pprint("Quitting...")
-                                    pygame.quit()
-                                    return
-                                elif event.type == event.type==pygame.KEYDOWN:
-                                    if event.key in [pygame.K_1,pygame.K_SPACE]:
-                                        col = 0
-                                    elif event.key == pygame.K_2:
-                                        col = 1
-                                    elif event.key == pygame.K_3:
-                                        col = random.randint(0,1)
-                                    elif event.key == pygame.K_ESCAPE:
-                                        col = 100
-                                        menu = True
-                                        board.drawmenu((white,black),cont = save)
-                                elif event.type == pygame.MOUSEBUTTONDOWN:
-                                    mx,my = pygame.mouse.get_pos()
-                                    if difficulty[0].collidepoint(mx,my): # White
-                                        col = 0
-                                    elif difficulty[1].collidepoint(mx,my): # Black
-                                        col = 1
-                                    elif difficulty[2].collidepoint(mx,my): # Random
-                                        col = random.randint(0,1)
-                            if col != -1: break
-                        if not running or menu: break
-                        color = 1
-                        MOVE = None
-                        save = None
-                        result = -1
-                        botplay = (col,logic)
-                        HISTORY = True
-                        board.setup()
-                        match = True
-                    elif buttons[2].collidepoint(mx,my): # Load board
-                        HISTORY = False
-                        x = board.load()
-                        if not x:
-                            print("Unable to load 'board.txt'.")
-                            continue
-                        if isinstance(x,list): color = int(x[0])
-                        else: color = 1
-                        MOVE, save = None, None
-                        result = -1
-                        menu, match = False, True
-                        if SWAPPING and color == 0: board.swapped = True
-                    elif buttons[3].collidepoint(mx,my): # Help
-                        back = board.drawhelp()
-                        done = False
-                        while not done:
-                            for event in pygame.event.get():
-                                if event.type == pygame.QUIT:
-                                    if LOGS: pprint("Quitting...")
-                                    pygame.quit()
-                                    return
-                                elif event.type == pygame.MOUSEBUTTONDOWN and back.collidepoint(*pygame.mouse.get_pos()): done = True
-                                elif event.type == pygame.KEYDOWN and event.key in [pygame.K_ESCAPE,pygame.K_q,pygame.K_x]: done = True
-                        board.drawmenu((white,black),cont = save)
-                    elif buttons[4].collidepoint(mx,my): # Quit
-                        if LOGS: pprint("Quitting...")
-                        pygame.quit()
-                        return
-                    elif save is not None and buttons[5].collidepoint(mx,my): # Continue
-                        color = save[0]
-                        MOVE = None
-                        menu, match = False, True
-        while settings:
-            pass
-        if match and color==1: board.swapped = False
-        while match:
-            turn = True
-            highlighted = None
-            dragging = False
-            lastselect = (-1,-1)
-            options = []
-            captureoptions = []
-            optionsTriggers = []
-            outcome = False
-            forceres = None
-            cont = False
-            asked_draw = False
-            if botplay is not None:
-                SWAPPING = False
-                board.swapped = botplay[0] == 1
-            if save is not None and len(save)>1 and isinstance(save[1],str):
-                turn = False
-                outcome = save[1]
-                save = None
-            if botplay is not None and botplay[0] == color:
-                turn = False
-                if botplay[1] == 4: board.draw(update=True,col=color)
-                elif WAIT>0:
-                    board.draw(update=True,col=color)
-                    time.sleep(WAIT)
-                MOVE = board.ai(*botplay)
-            else:
-                board.draw(update=True,col=color)
-            while turn:
-                for event in pygame.event.get():
-                    if event.type == pygame.QUIT:
-                        if LOGS: pprint("Quitting...")
-                        pygame.quit()
-                        return
-                    elif event.type == pygame.KEYDOWN:
-                        if event.key in [pygame.K_ESCAPE, pygame.K_x]:
-                            turn, match = False, False
-                            menu = True
-                            save = (color,)
-                            break
-                        elif event.key == pygame.K_s and botplay is None:
-                            SWAPPING = not SWAPPING
-                            board.swapped = SWAPPING and not bool(color)
-                            board.draw(update=True,col=color)
-                            if LOGS: print(f"Swapping toggled {"ON" if SWAPPING else 'OFF'}.")
-                        elif event.key == pygame.K_i:
-                            board.info = not board.info
-                            if LOGS: print(f"Info toggled {"ON" if board.info else "OFF"}.")        
-                        elif event.key == pygame.K_f and ADMIN:
-                            print(board.tofen(color))
-                        elif event.key == pygame.K_o and ADMIN:
-                            COLOROVERRIDE = not COLOROVERRIDE
-                            if LOGS: print(f"Override toggled {"ON" if COLOROVERRIDE else 'OFF'}.")
-                        elif event.key == pygame.K_l and ADMIN:
-                            HISTORY = False
-                            LOCKTURN = not LOCKTURN
-                            if LOGS: print("Locked turn." if LOCKTURN else "Unlocked turn.")
-                        elif event.key == pygame.K_g and ADMIN:
-                            board.save(stats=[color,int(INFO),int(SWAPPING)])
-                            print("Board saved to 'board.txt'.")
-                        elif event.key == pygame.K_n and ADMIN:
-                            turn = False
-                            MOVE = board.ai(color)
-                            square = MOVE[-2:]
-                            break
-                        elif event.key == pygame.K_b and ADMIN:
-                            turn = False
-                            MOVE = board.ai(color,logic=4)
-                            square = MOVE[-2:]
-                            break
-                        elif event.key == pygame.K_e and ADMIN:
-                            print("Board evaluation:")
-                            if HISTORY: print(api(board.tofen(color),ev=True))
-                            else: print(board.advantage(1))
-                        elif event.key == pygame.K_k and ADMIN:
-                            HISTORY = False
-                            square = board.getsquare(pygame.mouse.get_pos())
-                            if square is not None:
-                                p = board.lookup(square)
-                                if p is not None and p.type != 'king':
-                                    del board[square]
-                                    m = board.whitemoved if p.color == 1 else board.blackmoved
-                                    if p.type == 'rook':
-                                        if board.code(square) in ['h1','h8']: m[2] = True
-                                        elif board.code(square) in ['a1','a8']: m[0] = True
-                            board.draw(update=True,col=color)
-                        elif event.key == pygame.K_1 and ADMIN:
-                            HISTORY = False
-                            square = board.getsquare(pygame.mouse.get_pos())
-                            if square is not None:
-                                p = board.lookup(square)
-                                if p is not None and p.color != 1 and p.type != 'king':
-                                    board.setpiece(square,p.type,1)
-                                    board.draw(update=True,col=color)
-                        elif event.key == pygame.K_0 and ADMIN:
-                            HISTORY = False
-                            square = board.getsquare(pygame.mouse.get_pos())
-                            if square is not None:
-                                p = board.lookup(square)
-                                if p is not None and p.color != 0 and p.type != 'king':
-                                    board.setpiece(square,p.type,0)
-                                    board.draw(update=True,col=color)
-                        elif event.key == pygame.K_m and ADMIN and highlighted is not None:
-                            HISTORY = False
-                            square = board.getsquare(pygame.mouse.get_pos())
-                            if square is not None:
-                                board.move(highlighted, square)
-                                board.drawsquare(square)
-                                board.drawsquare(highlighted)
-                                pygame.display.update()
-                        elif event.key == pygame.K_h:
-                            S = board.ai(color,logic=4)
-                            S1 = ''
-                            if S == 'castle':
-                                if color == 0: S,S1 = 'g8','e8'
-                                else: S,S1= 'g1','e1'
-                            elif S == 'longcastle':
-                                if color == 0: S,S1 = 'c8','e8'
-                                else: S,S1 = 'c1','e8'
-                            else: S,S1= S[-2:],S[:2]
-                            board.drawsquare(board.ind(S),hint=0)
-                            board.drawsquare(board.ind(S1),hint=min(10,HIGHLIGHT_BORDER))
-                            pygame.display.update()
-                        elif event.key == pygame.K_F3:
-                            print(api(board.tofen(color),json=True))
-                        elif event.key == pygame.K_u and (ADMIN or botplay is not None) and HISTORY:
-                            if not board.fullhistory: board.fullhistory = board.history
-                            color = board.undo(1 if botplay is None else 2)
-                            turn = False
-                            cont = True
-                            break
-                        elif event.key == pygame.K_r and (ADMIN or botplay is not None) and HISTORY and board.fullhistory:
-                            L = len(board.history.splitlines())
-                            if len(board.fullhistory.splitlines())>L+1 and board.fullhistory.splitlines()[L+1] in ['queen','knight','bishop','rook']: L += 1
-                            L += int(botplay is not None)
-                            color = board.fromhistory(board.fullhistory,L+1)
-                            if board.history == board.fullhistory: board.fullhistory = ''
-                            turn = False
-                            cont = True
-                            break
-                        elif event.key == pygame.K_p and ADMIN:
-                            square = board.getsquare(pygame.mouse.get_pos())
-                            if square is not None and board.lookup(square) is None:
-                                board.drawsquare(square,highlight=True)
-                                pygame.display.update()
-                                piece = None
-                                while True:
-                                    for event in pygame.event.get():
-                                        if event.type == pygame.QUIT:
-                                            if LOGS: pprint("Quitting...")
-                                            pygame.quit()
-                                            return
-                                        elif event.type == pygame.KEYDOWN:
-                                            if event.key == pygame.K_q: piece = 'queen'
-                                            elif event.key == pygame.K_r: piece = 'rook'
-                                            elif event.key == pygame.K_n: piece = 'knight'
-                                            elif event.key == pygame.K_b: piece = 'bishop'
-                                            elif event.key == pygame.K_p: piece = 'pawn'
-                                            elif event.key == pygame.K_x: piece = 'star'
-                                            elif event.key == pygame.K_k: piece = 'nightrider'
-                                            elif event.key == pygame.K_a: piece = 'archbishop'
-                                            elif event.key == pygame.K_e: piece = 'empress'
-                                            elif event.key == pygame.K_d: piece = 'dragon'
-                                            elif event.key in [pygame.K_i,pygame.K_ESCAPE]: piece = ''
-                                    if piece is not None: break
-                                if piece:
-                                    board.setpiece(square,piece,color)
-                                    HISTORY = False
-                                board.drawsquare(square)
-                                pygame.display.update()
-                        elif event.key == pygame.K_q:
-                            btns = board.drawsurr(color)
-                            choice = 0
-                            while True:
-                                for event in pygame.event.get():
-                                    if event.type == pygame.QUIT:
-                                        if LOGS: pprint("Quitting...")
-                                        pygame.quit()
-                                        return
-                                    elif event.type == pygame.KEYDOWN:
-                                        if event.key in [pygame.K_ESCAPE,pygame.K_2,pygame.K_c,pygame.K_n,pygame.K_q]: choice = 2
-                                        elif event.key in [pygame.K_1,pygame.K_y]: choice = 1
-                                    elif event.type == pygame.MOUSEBUTTONDOWN:
-                                        mx,my = pygame.mouse.get_pos()
-                                        if btns[0].collidepoint(mx,my): choice = 1
-                                        elif btns[1].collidepoint(mx,my): choice = 2
-                                if choice: break
-                            if choice == 1:
-                                forceres = int(not color)
-                                turn = False
-                            else: board.draw(update=True,col=color)
-                        elif event.key == pygame.K_d and botplay is None and not asked_draw:
-                            btns = board.drawsurr(color, draw=True)
-                            choice = 0
-                            asked_draw = True
-                            while True:
-                                for event in pygame.event.get():
-                                    if event.type == pygame.QUIT:
-                                        if LOGS: pprint("Quitting...")
-                                        pygame.quit()
-                                        return
-                                    elif event.type == pygame.KEYDOWN:
-                                        if event.key in [pygame.K_ESCAPE,pygame.K_2,pygame.K_r,pygame.K_n,pygame.K_d]: choice = 2
-                                        elif event.key in [pygame.K_1,pygame.K_y,pygame.K_a]: choice = 1
-                                    elif event.type == pygame.MOUSEBUTTONDOWN:
-                                        mx,my = pygame.mouse.get_pos()
-                                        if btns[0].collidepoint(mx,my): choice = 1
-                                        elif btns[1].collidepoint(mx,my): choice = 2
-                                if choice: break
-                            if choice == 1:
-                                forceres = -1
-                                turn = False
-                            else: board.draw(update=True,col=color)
-                    elif event.type == pygame.MOUSEBUTTONDOWN and pygame.mouse.get_pressed()[0]: # Left click
-                        pos = pygame.mouse.get_pos()
-                        square = board.getsquare(pos)
-                        board.draw(col=color)
-                        if square in optionsTriggers: # Handleturn
-                            turn = False
-                            if 'castle' in options and square in [(6,0),(6,7)]: MOVE = 'castle'
-                            elif 'longcastle' in options and square in [(2,0),(2,7)]: MOVE = 'longcastle'
-                            else: MOVE = f"{board.code(highlighted)} {board.code(square)}"
-                            break
-                        if square is not None:
-                            if square == highlighted: lastselect = square
-                            if highlighted is not None: 
-                                board.drawsquare(square, highlight=highlighted)
-                                options, captureoptions, optionsTriggers = [],[],[]
-                            highlighted = square
-                            board.drawsquare(square,highlight=True)
-                            p = board.lookup(square)
-                            if p is not None and (p.color == color or COLOROVERRIDE):
-                                dragging = True
-                                options = board.move_options(square,CHECK=True,CASTLING=True)
-                                captureoptions = board.capture_options(square,CHECK=True)
-                            optionsTriggers = board.drawoptions(square,options, captureoptions)
-                        pygame.display.update()
-                    elif event.type == pygame.MOUSEBUTTONUP:
-                        pos = pygame.mouse.get_pos()
-                        square = board.getsquare(pos)
-                        if lastselect == square:
-                            lastselect = (-1,-1)
-                            highlighted = None
-                            options,captureoptions,optionsTriggers = [],[],[]
-                            board.draw(update=True,col=color)
-                        if dragging:
-                            dragging = False
-                            if square in optionsTriggers: # Handleturn
-                                turn = False
-                                if 'castle' in options and square in [(6,0),(6,7)]: MOVE = 'castle'
-                                elif 'longcastle' in options and square in [(2,0),(2,7)]: MOVE = 'longcastle'
-                                else: MOVE = f"{board.code(highlighted)} {board.code(square)}"
-                                break
-                            board.draw(col=color)
-                            if highlighted is not None:
-                                board.drawsquare(location=highlighted,highlight=True)
-                                board.drawoptions(highlighted,options,captureoptions)
-                            pygame.display.update()
-                    elif pygame.mouse.get_pressed()[0] and highlighted is not None and board[highlighted] is not None and dragging:
-                        pos = pygame.mouse.get_pos()
-                        currsquare = board.getsquare(pos)
-                        board.draw(col=color)
-                        if square is not None:
-                            board.drawsquare(square,highlight=True,piece=False)
-                            board.drawoptions(square,options,captureoptions)
-                        if currsquare is not None:
-                            if currsquare == square: board.drawsquare(currsquare,hl2=True, piece=False)
-                            else: board.drawsquare(currsquare,hl2=True)
-                        p = board[highlighted]
-                        p = board.piecefont.render(p.symbol, True, WHITEPIECE if p.color else BLACKPIECE)
-                        center = p.get_rect(center=(pos[0],pos[1]))
-                        board.win.blit(p,center)
-                        pygame.display.update()
-            if not match: break
-            if cont: continue
-            if MOVE is not None and not outcome:
-                board.fullhistory = ''
-                if COLOROVERRIDE:
-                    outcome = board.handle_turn(MOVE, color)
-                    if not outcome: outcome = board.handle_turn(MOVE, int(not color))
-                else:
-                    outcome = board.handle_turn(MOVE, color)
-            if isinstance(outcome, str): # Pawn promotion
-                if botplay is not None and botplay[0] == color:
-                    options = ['bishop','knight'] if botplay[1] == 3 else ['knight','bishop','rook','queen'] if botplay == 1 else ['queen']
-                    promo = random.choice(options)
-                    prompting = False
-                else:
-                    board.draw(col=color)
-                    squares = board.drawpromo(square)
-                    pygame.display.update()
-                    prompting = True
-                if LOGS: print(f"{"White" if color == 1 else "Black"} promoting pawn on {outcome}.\n(Q/Space = Queen | N = Knight | R = Rook | B = Bishop)")
-                while prompting:
-                    promo = None
-                    for event in pygame.event.get():
-                        if event.type == pygame.QUIT:
-                            if LOGS: pprint("Quitting...")
-                            pygame.quit()
-                            return
-                        elif event.type == pygame.KEYDOWN:
-                            if event.key in [pygame.K_q,pygame.K_1,pygame.K_SPACE]:
-                                promo = 'queen'
-                                prompting = False
-                            elif event.key in [pygame.K_n,pygame.K_2]:
-                                promo = 'knight'
-                                prompting = False
-                            elif event.key in [pygame.K_r,pygame.K_3]:
-                                promo = 'rook'
-                                prompting = False
-                            elif event.key in [pygame.K_b,pygame.K_4]:
-                                promo = 'bishop'
-                                prompting = False
-                            elif event.key in [pygame.K_x, pygame.K_ESCAPE]:
-                                turn, match, prompting = False, False, False
-                                menu = True
-                                save = (color,outcome)
-                                break
-                        elif event.type == pygame.MOUSEBUTTONDOWN:
-                            pos = pygame.mouse.get_pos()
-                            square = board.getsquare(pos)
-                            if square in squares:
-                                promo = ['queen','knight','rook','bishop'][squares.index(square)]
-                                prompting = False
-                    if not prompting: break
-                if not match: break
-                if promo is not None:
-                    board.setpiece(outcome, name=promo)
-                    if LOGS: print(f"{"White" if color == 1 else "Black"} promoted pawn on {outcome} to a {promo.capitalize()}.")
-                    if HISTORY: board.history += promo+'\n'
-            if forceres == -1 or board.stalemate(int(not color)) or board.drawmate() or any([k=='king' for k in [p.type for p in board.white_captured.union(board.black_captured)]]):
-                if LOGS: print(f"Stalemate!")
-                result = -1
-                total += 1
-                match, menu = False, True
-                endscreen = True
-            if forceres in [0,1] or board.checkmate(int(not color)):
-                if forceres is not None: color = int(forceres)
-                if LOGS: print(f"\nCheckmate! {f"White" if color==1 else f"Black"} has won.")
-                result = int(color)
-                total += 1
-                if result == 0: black += 1
-                else: white += 1
-                match, menu = False, True
-                endscreen = True
-            if not LOCKTURN and match:
-                color = int(not color)
-                if SWAPPING: board.swapped = not board.swapped
-        if endscreen: buttons = board.drawend(result)
-        while endscreen:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    if LOGS: pprint("Quitting...")
-                    pygame.quit()
-                    return
-                elif event.type == pygame.KEYDOWN:
-                    if event.key in [pygame.K_ESCAPE,pygame.K_2]:
-                        endscreen, menu = False, True
-                    elif event.key == pygame.K_u and ADMIN and HISTORY:
-                        endscreen, menu, match = False, False, True
-                        MOVE = None
-                        if result == 0: black -= 1
-                        else: white -= 1
-                        result = -1
-                        total -= 1
-                        save = [board.undo()]
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    mx,my = pygame.mouse.get_pos()
-                    if buttons[0].collidepoint(mx,my): # Play again
-                        endscreen, menu, match = False, False, True
-                        color = 1
-                        MOVE = None
-                        save = None
-                        result = -1
-                        board.setup()
-                    elif buttons[1].collidepoint(mx,my): # Menu
-                        endscreen, menu = False, True
-                        save = None
 if __name__ == '__main__':
-    if TERMINAL: superloop()
-    else: pyloop()
+    superloop()
