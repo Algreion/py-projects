@@ -1,6 +1,11 @@
 """Library for many of the useful data structures and helper functions I made."""
 
-# Functions
+import math
+from string import punctuation
+
+# FUNCTIONS
+
+# 1. Functions - Collections
 
 def flatten(nested: list | tuple | set | dict) -> list:
     """Flattens lists, tuples, sets and dicts."""
@@ -12,10 +17,203 @@ def flatten(nested: list | tuple | set | dict) -> list:
             else:
                 flat_list.append(item)
         return flat_list
-    except:
-        return None
+    except TypeError: return [nested]
 
-# Classes
+def rev_dict(s: dict, duplicates: bool = False) -> dict:
+    """Maps values to keys"""
+    inverse = dict()
+    for k,v in s.items():
+        if duplicates: inverse.setdefault(v,[]).append(k)
+        else: inverse[v] = k
+    return inverse
+
+def remove_duplicates(arr) -> list:
+    """Preserves ordering"""
+    seen = set()
+    return [x for x in arr if not (x in seen or seen.add(x))]
+
+def powerset(s: list):
+    """Returns the power set of the list."""
+    if not s:
+        return [[]]
+    elem = s[0]
+    rest = s[1:]
+    subsets = powerset(rest)
+    return subsets + [[elem] + subset for subset in subsets]
+
+def subsets(arr: list, n: int) -> list:
+    """Returns all the n-length subsets of the input list."""
+    res = []
+    def rec(path, i):
+        if len(path)==n:
+            res.append(path[:])
+            return
+        if i >= len(arr): return
+        rec(path+[arr[i]],i+1)
+        rec(path,i+1)
+    rec([],0)
+    return res
+
+# 2. Functions - Strings
+
+def snake_to_camel(s: str) -> str:
+    """snake_case to camelCase"""
+    text = s.split("_")
+    return text[0] + "".join(x.title() for x in text[1:])
+
+def camel_to_snake(s: str) -> str:
+    """camelCase to snake_case"""
+    l, r = 0, 0
+    text = []
+    while r < len(s):
+        if s[r].isupper():
+            text.append(s[l:r])
+            l = r
+        r += 1
+    text.append(s[l:r+1])
+    return "_".join(text).lower()
+
+def is_anagram(a, b):
+    t = list(a.lower().replace(" ",""))
+    s = list(b.lower().replace(" ",""))
+    return sorted(t) == sorted(s)
+
+def is_palindrome(word: str) -> bool:
+    word = word.lower().strip("!,.'?;:").replace(" ","")
+    return word == word[::-1]
+
+def valid_parenthesis(string: str) -> bool:
+    """Checks for invalid parentheses in a string."""
+    opening = 0
+    for c in string:
+        if c == "(":
+            opening += 1
+        elif c == ")":
+            opening -= 1
+        if opening < 0: return False
+    return opening==0
+
+def checkp(file: str) -> None:
+    """Checks for invalid parentheses in file"""
+    with open(file,"r", encoding="utf-8") as f:
+        path = ""
+        curr = 0
+        for line in f.readlines():
+            curr += 1
+            path += line
+            if not valid_parenthesis(path):
+                print(f"Invalid parenthesis on line {curr}")
+                path = ""
+
+# 3. Functions - Numbers / Conversions
+
+def is_prime(n: int) -> bool:
+    """Checks whether a number is prime."""
+    if n < 2:
+        return False
+    for i in range(2, int(math.sqrt(n)) + 1):
+        if n % i == 0:
+            return False
+    return True
+
+def prime_list(n: int) -> list:
+    """Returns a list of all prime numbers from 2 to n"""
+    return list(filter(is_prime, [n+1 for n in range(n)]))
+
+def byte_converter(bytes: int) -> str:
+    """Convert bytes to human readable string."""
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB']:
+        if bytes < 1024:
+            return f"{bytes:.2f}{unit}"
+        bytes /= 1024
+    return f"{bytes:.2f}YB"
+
+def crgb(color: str) -> tuple:
+    """Converts hex colors to RGB."""
+    color = color.strip("#").lower()
+    if len(color) == 6: return (int(color[:2],16),int(color[2:4],16),int(color[4:6],16))
+    elif len(color) == 3: return tuple([int(color[i],16)*17 for i in range(3)])
+    else: raise ValueError("invalid hex code")
+
+def chex(color: str | tuple | int, g: int | None = None, b: int = 0) -> str:
+    """Converts RGB colors to hex."""
+    def to_hex(r,g,b):
+        if not (0<=r<=255 and 0<=g<=255 and 0<=b<=255): return None
+        return f"#{"".join(hex(x)[2:].rjust(2,"0") for x in [r,g,b])}"
+    if isinstance(color,str):
+        color = color.strip("rgb() ")
+        if "," in color: return to_hex(*map(int,color.split(",")))
+        else: return to_hex(*map(int,color.split()))
+    elif isinstance(color,tuple): return to_hex(*color)
+    elif isinstance(color,int):
+        return to_hex(color,color,color) if g is None else to_hex(color,g,b)
+    else: raise ValueError("invalid RGB code")
+
+def invert(color: str | tuple, rgb_output: bool = False) -> str:
+    """Returns the inverted color. If rgb_output is toggled, always returns an RGB tuple."""
+    try:
+        if isinstance(color,str) and (color.startswith("#") or "," not in color):
+            r,g,b = crgb(color)
+            if not rgb_output: return chex(255-r,255-g,255-b)
+        else:
+            if isinstance(color,tuple): r,g,b = color
+            else: r,g,b = map(int,color.strip("rgb() ").split(","))
+            if not rgb_output: return f"rgb({255-r},{255-g},{255-b})"
+        return (255-r,255-g,255-b)
+    except ValueError: raise ValueError("invalid color code")
+
+# 4. Functions - Text analysis
+
+def common_letters(inp: str, info: bool = True, n: int = 0, uppercase: bool = True) -> None | list:
+    """Prints the most common letters in order. If info is false, returns an ordered list."""
+    letters = {}
+    with open(inp, 'r',encoding="utf-8") as f:
+        for line in f:
+            for c in line.strip().upper() if uppercase else line.strip().lower(): 
+                if c.isalpha(): letters[c] = letters.get(c,0) + 1
+    if info:
+        g = sum(letters.values())/100
+        for i,(k,v) in list(enumerate(sorted(letters.items(),key=lambda x: -x[1])))[:n if n>0 else len(letters)]:
+            print(f"{i}. {k} | {v} ({v/g:.2f}%)")
+    else:
+        return list(map(lambda x:x[0],sorted(letters.items(),key=lambda x: x[1],reverse=True)
+                    ))[:n if n>0 else len(letters)]
+
+def common_chars(inp: str, info: bool = True, n: int = 0) -> None | list:
+    """Prints the most common characters in order. If info is false, returns an ordered list."""
+    chars = {}
+    with open(inp, 'r',encoding="utf-8") as f:
+        for line in f:
+            for c in line.strip(): 
+                chars[c] = chars.get(c,0) + 1
+    if info:
+        g = sum(chars.values())/100
+        for i,(k,v) in list(enumerate(sorted(chars.items(),key=lambda x: -x[1])))[:n if n>0 else len(chars)]:
+            print(f"{i}. {k} | {v} ({v/g:.2f}%)")
+    else:
+        return list(map(lambda x:x[0],sorted(chars.items(),key=lambda x: -x[1])
+                    ))[:n if n>0 else len(chars)]
+
+def common_words(inp: str, info: bool = True, n: int = 0) -> None | list:
+    """Prints the most common words in order. If info is false, returns an ordered list."""
+    X = str.maketrans(dict(zip(list(punctuation),("" for _ in range(len(punctuation))))))
+    words = {}
+    with open(inp, 'r',encoding="utf-8") as f:
+        for line in f:
+            for w in line.strip().split():
+                w = w.lower().translate(X)
+                words[w] = words.get(w, 0) + 1
+    if info:
+        g = sum(words.values())/100
+        for i,(k,v) in list(enumerate(sorted(words.items(),key=lambda x: (-x[1],x[0]))))[:n if n>0 else len(words)]:
+            print(f"{i}. {k} | {v} ({v/g:.2f}%)")
+    else:
+        return list(map(lambda x:x[0],sorted(words.items(),key=lambda x: (-x[1],x[0]))
+                    ))[:n if n>0 else len(words)]
+
+
+# CLASSES
+
 
 class MinHeap:
     def __init__(self, heap: list = []):
@@ -370,160 +568,3 @@ class Hashmap:
         """Updates the hashmap with key,value pairs as tuples."""
         for k,v in new:
             self[k] = v
-
-class Node:
-    def __init__(self, data = None, prev = None, nxt = None):
-        self.data = data
-        self.next = nxt
-        self.prev = prev
-    def __repr__(self):
-        return f'Node(data={self.data},prev={self.prev.data if self.prev else None},next={self.next.data if self.next else None})'
-
-class LinkedList:
-    def __init__(self, array: list = None):
-        """Doubly linked list data structure."""
-        self.head = Node()
-        self.tail = self.head
-        self._size = 0
-        if array:
-            self.addmulti(array)
-    def __str__(self) -> str:
-        curr, res = self.head, []
-        while curr:
-            if curr.data is not None: res.append(str(curr.data)) 
-            curr = curr.next
-        return ", ".join(res)
-    def __repr__(self):
-        return f"<<{str(self)}>>"
-    def __getitem__(self, index: int):
-        return self.get(index)
-    def __setitem__(self, index: int, data):
-        self.insert(index, data)
-    def __delitem__(self, index):
-        self.delete_i(index)
-    def __add__(self, n):
-        if type(n) == LinkedList:
-            self.tail.next = n.head
-            n.head.prev = self.tail
-        else:
-            self.append(n)
-        return self
-    def __iter__(self):
-        return iter(self.tolist())
-    def __len__(self):
-        return self._size
-
-    def _callnodes(self, func):
-        """Call a function on each of the nodes"""
-        curr = self.head
-        while curr:
-            func(curr)
-            curr = curr.next
-    def append(self, data):
-        """Add a node at the end of the list"""
-        self.tail.next = Node(data, self.tail, None)
-        self.tail = self.tail.next
-        self._size += 1
-    def prepend(self, data):
-        """Add a node at the start of the list"""
-        self.head.prev = Node(None, None, self.head)
-        self.head.data = data
-        self.head = self.head.prev
-        self._size += 1
-    def insert(self, index, data):
-        """Inserts a node at a specific position"""
-        if index > self._size: index = -1
-        if index == -1 or index == self.getsize():
-            self.append(data)
-        elif index == 0:
-            self.prepend(data)
-        else:
-            node = self.get(index)
-            node.prev = Node(data, node.prev, node)
-            node.prev.prev.next = node.prev
-            self._size += 1
-    def search(self, data) -> bool:
-        """Returns true if a node with the data exists"""
-        curr = self.head
-        while curr:
-            if curr.data == data: return True
-            curr = curr.next
-        return False
-    def find(self, data):
-        """Returns the first node containing the data"""
-        curr = self.head
-        while curr:
-            if curr.data == data: return curr
-            curr = curr.next
-        return None
-    def get(self, index):
-        """Returns the node at index i"""
-        if index < 0: index = len(self)+index
-        elif index >= len(self): return self.tail
-        curr = self.head
-        while curr and index>=0:
-            curr = curr.next
-            index -= 1
-        return curr
-    def addmulti(self, data: list, prepend: bool = False):
-        """Adds all the data to the list. Appends by default, prepends otherwise"""
-        if prepend:
-            for v in data: self.prepend(v)
-        else: 
-            for v in data: self.append(v)
-    def delete(self, data = None, n = None) -> bool:
-        """Deletes the data from the list, or the specific node n"""
-        if n: node = n
-        elif not (node := self.find(data)) or self.head == self.tail: return False
-        if node.next:
-            node.next.prev = node.prev
-        else: self.tail = node.prev
-        if node.prev:
-            node.prev.next = node.next
-        else: self.head = node.next
-        del node
-        self._size -= 1
-        return True
-    def delete_i(self, index) -> bool:
-        """Deletes the node at position i"""
-        return self.delete(None,self.get(index))
-    def deletemulti(self, data: list) -> int:
-        """Deletes all nodes with the data in list"""
-        r = 0
-        for v in data: 
-            r += self.delete(v)
-        return r
-    def deletemulti_i(self, start: int, end: int) -> int:
-        """Delete all nodes between a specified range"""
-        r = 0
-        for i in range(start, end):
-            r += self.delete_i(i-r)
-        return r
-    def change(self, v1, v2):
-        """Change a node's data to a new value"""
-        r = 0
-        while (node := self.find(v1)):
-            node.data = v2
-            r += 1
-        return r
-    def getsize(self): return self._size
-    def reverse(self):
-        """Reverses the list"""
-        curr, self.head, self.tail = self.head, self.tail, self.head
-        while curr:
-            curr.prev, curr.next, curr = curr.next, curr.prev, curr.next
-    def tolist(self) -> list:
-        """Return a list representation of the data structure"""
-        res = []
-        curr = self.head
-        while curr:
-            if curr.data is not None: res.append(curr.data)
-            curr = curr.next
-        return res
-    def call(self, func):
-        """Call a function on every nodes' data"""
-        curr = self.head
-        while curr:
-            func(curr.data)
-            curr = curr.next
-
