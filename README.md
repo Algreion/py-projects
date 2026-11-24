@@ -31,6 +31,11 @@ The project was ported to a terminal version, while the original pygame version 
 
 `python chess.py`
 
+## rando
+A custom pseudo-random generator library using a logistic map. Will likely be moven to a separate repo after adding more features, and a suite of statistical testing to prove its effectiveness.
+
+**Requirements:** N/A
+
 ## alglib
 A library of useful classes and helper functions implemented from scratch:
 - Collections: flatten, rev_dict, remove_duplicates, powerset, subsets
