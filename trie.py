@@ -8,13 +8,46 @@ class TrieNode:
         self.end = False
 
 class Trie:
-    def __init__(self):
+    def __init__(self, file: str = ''):
         self.root = TrieNode()
-
+        if file: 
+            try: self.fill(file)
+            except: print("Unable to open provided file.")
+    def __add__(self, other):
+        if type(other) == str:
+            self.insert(other)
+        else:
+            n = 0
+            for word in other.normal_wordlist():
+                if not self.search(word):
+                    self.insert(word)
+                    n += 1
+            return n
+    def __sub__(self, other):
+        if type(other) == str:
+            self.delete(other)
+        else:
+            n = 0
+            for word in other.normal_wordlist():
+                if not self.search(word):
+                    self.delete(word)
+                    n += 1
+            return n
+    def __str__(self):
+        return str(self.normal_wordlist())
+    def __repr__(self):
+        return f"Trie(size={self.size()},depth={self.get_depth()})"
+    def __getitem__(self, word: str) -> bool:
+        return self.search(word)
+    def __setitem__(self, word: str, presence: bool):
+        if presence: self + word
+        else: self.delete(word)
+    def __delitem__(self, word: str):
+        self.delete(word)
+    
     def insert(self, word: str) -> None:
         cur = self.root
-        for c in word:
-            c = c.lower()
+        for c in word.lower():
             if c not in cur.children:
                 cur.children[c] = TrieNode()
             cur = cur.children[c]
@@ -26,10 +59,10 @@ class Trie:
             if c not in cur.children: return False
             cur = cur.children[c]
         return cur.end
-    
+
     def search(self, word: str) -> bool:
         """Searches for a word with wildcards using ".", such as "g..d" -> True if good, goad etc. are present."""
-        q = deque([(self.root,0)])
+        q = deque([(self.root, 0)])
         while q:
             node, depth = q.popleft()
             if depth == len(word) and node.end: return True
@@ -37,12 +70,12 @@ class Trie:
             c = word[depth]
             if c != ".":
                 if c not in node.children: continue
-                q.append((node.children[c],depth+1))
+                q.append((node.children[c], depth+1))
             else:
                 for child in node.children:
-                    q.append((node.children[child],depth+1))
+                    q.append((node.children[child], depth+1))
         return False
-    
+
     def complete(self, word: str) -> str:
         """Fills in the wildcards in alphabetical order, such as "a..le" -> "abele"."""
         q = deque([(self.root, "", 0)])
@@ -58,7 +91,7 @@ class Trie:
                 for char in sorted(node.children):
                     q.append((node.children[char], path + char, depth+1))
         return ""
-    
+
     def autocomplete(self, prefix: str) -> str:
         """Same as normal autocomplete but accepts wildcards."""
         q = deque([(self.root, "", 0)])
@@ -107,15 +140,15 @@ class Trie:
     def insertmulti(self, words: list) -> None:
         for w in words:
             self.insert(w)
-    
+
     def get_depth(self) -> int:
         """Returns the depth of the Trie."""
         def depth(node):
             if not node.children: return 0
             return 1+max(depth(child) for child in node.children.values())
         return depth(self.root)
-    
-    def normal_autocomplete(self,prefix: str) -> str:
+
+    def normal_autocomplete(self, prefix: str) -> str:
         """Returns the first word in alphabetical order that begins with the prefix, or "" if none match."""
         cur = self.root
         for c in prefix:
@@ -129,7 +162,7 @@ class Trie:
                 q.append((node.children[c], path + c))
         return ""
     
-    def fill(self,file: str) -> None:
+    def fill(self, file: str) -> None:
         """Fills out the Trie with a txt file's words."""
         punctuation = str.maketrans("","",string.punctuation)
         with open(file,"r",encoding="utf-8") as f:
@@ -137,7 +170,7 @@ class Trie:
                 for word in line.split():
                     self.insert(str(word.translate(punctuation)))
 
-    def normal_wordlist(self, n: int=None) -> list:
+    def normal_wordlist(self, n: int = None) -> list:
         """Returns the n first words in the Trie in alphabetical order."""
         def collect_words(node,prefix,words,n):
             if node.end: words.append(prefix)
@@ -169,8 +202,8 @@ class Trie:
             return False
         deletor(self.root,0)
         return present
-    
-    def deletepath(self, prefix: str, confirm=100) -> int:
+
+    def deletepath(self, prefix: str, confirm: int = 100) -> int:
         """Removes all words starting with the prefix from the Trie. Use "" to clear the entire Trie"""
         words = self.path_wordlist(prefix)
         if confirm and len(words) >= confirm:
@@ -200,7 +233,7 @@ class Trie:
         words = []
         collect_words(curr, path, words)
         return words
-    
+
     def size(self) -> int:
         """Returns the amount of words in the Trie. Same as the size attribute"""
         n = 0
@@ -211,8 +244,8 @@ class Trie:
                 counter(node.children[c])
         counter(self.root)
         return n
-    
-    def mostcommon(self, n=5, info=False) -> list:
+
+    def mostcommon(self, n: int = 5, info: bool = False) -> list:
         """Returns the n most common letters in the Trie."""
         common = {}
         q = deque([self.root])
@@ -245,11 +278,11 @@ class Trie:
                 break
         return res
     
-    def uniqueword_common(self, length: int = 5, banned: str = None, number: int = 1) -> list:
+    def uniqueword_common(self, length: int = 5, banned: str = "", number: int = 1) -> list:
         """Returns a list of n words with unique letters of specified length based on most common English letters."""
         common = self.mostcommon(26)
         if banned:
-            common = [common[i] for i in range(len(common)) if common[i] not in banned]
+            common = list(filter(lambda i: i not in banned, common))
         if len(common) < length:
             return []
         all_words = self.normal_wordlist()
@@ -261,8 +294,8 @@ class Trie:
                 res.append((score,word))
         res = sorted(res, key=lambda x: x[0], reverse=True)[:number]
         return [word for _, word in res]
-    
-    def spellcheck(self, check, info=False) -> str:
+
+    def spellcheck2(self, check: str, info: bool = False) -> str:
         """Returns the closest word in the Trie based on ordinal difference."""
         all_words = self.normal_wordlist()
         def distance(word, word2):
@@ -284,15 +317,15 @@ class Trie:
         if info: return best
         return best[1]
 
-    def spellcheck2(self, check, options=1) -> str:
+    def spellcheck(self, check: str, options: int = 1) -> str:
         """Returns the closest word in the Trie based on the Ratcliff/Obershelp algorithm."""
         all_words = self.normal_wordlist()
-        matches = gcm(check, all_words, n=options,cutoff=0.25)
+        matches = gcm(check, all_words, n=options, cutoff=0.25)
         if not matches: return False
         if options == 1: return matches[0]
         return matches
-    
-    def wordle(self, word, present=None, banned=None):
+
+    def wordle(self, word: str = ".....", present: str = "", banned: str = ""):
         all_words = self.wordlist(word)
         options = []
         for w in all_words:
@@ -301,6 +334,5 @@ class Trie:
             options.append(w)
         return options
 
-
-
-
+if __name__ == '__main__':
+    t = Trie()
