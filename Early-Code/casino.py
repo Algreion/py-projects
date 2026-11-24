@@ -1,8 +1,9 @@
+
 import random
 from collections import deque
 from rich import print,text
 
-#TODO | UNO, add cheating options with skill, finish casino mainloop, add chess, add roulette
+#TODO | UNO, add cheating options with skill, finish casino mainloop, add chess, add reputation (ranks) & debt (so you can't bet whatever)
 
 N2W = {1:"one",2:"two",3:"three",4:"four",5:"five",6:"six",7:"seven",8:"eight",9:"nine",10:"ten"}
 W2N = dict([(w,n) for n,w in N2W.items()])
@@ -66,7 +67,7 @@ class UnoCard:
         self.visible = False
         self.marked = False
     def __repr__(self):
-        return f"UnoCard(name={self.name},color={self.color}){",visible" if self.visible else ""}{",marked" if self.marked else ""}"
+        return f"UnoCard(name={self.name},color={self.type}){",visible" if self.visible else ""}{",marked" if self.marked else ""}"
     def __str__(self):
         d = {"skip":'⦸',"reverse":'↻',"draw2":'+2',"wild":'W',"draw4":'+4'}
         return f"{d[self.name] if self.name in d else self.name}"
@@ -180,7 +181,9 @@ class Hand:
         """Adds a card to the hand."""
         self.hand.append(card)
         self.size = len(self)
-Player()
+
+
+
 class Casino:
     def __init__(self, name: str = "Casino", money: float = 1e6, dealer: Player | None = None):
         self.name = name
@@ -233,7 +236,10 @@ class Casino:
                 print(f"{self.db[i]} registered.")
                 continue
             x = input(f"[{self.db[main].name}] > ").lower()
-            if x in ['1','p','play']:
+            if not x:
+                print("Quitting...")
+                return
+            elif x in ['1','p','play']:
                 print(f"Choose a game to play. Options:\n{' | '.join(f"{k} - {str(v)}" for k,v in self.games.items())}")
                 y = input("> ")
                 if not y.isdigit():
@@ -249,7 +255,7 @@ class Casino:
             elif x in ['4','t','train']:
                 pass
             elif x in ['5','z','cheats','cheat']:
-                y = input("Cheat options:\n1. Change money | 2. Change skill | 3. Cancel debt\n> ")
+                y = input("Cheat options:\n1. Change money | 2. Change skill | 3. Cancel debt | 4. Cancel.\n> ")
                 match y:
                     case '1':
                         char = self.choose_char(active)
@@ -279,11 +285,13 @@ class Casino:
                         print("Your debt has been forgiven.")
                         for i in active: self.db[i].money = max(self.db[i].money,0)
                         cheat = True
+                    case '4' | 'x':
+                        pass
                     case _:
                         print("Invalid option.")
             elif x in ['6','q','quit','x']:
                 print(f"Thank you for playing, {self.db[main]}! You made a total of {self.money_color(sum([p.money for p in [self.db[i] for i in active]])-100*len(active))}.")
-                quit()
+                return
             elif x in ['h','help','format']:
                 print(CASINO_HELP)
             else:
@@ -477,7 +485,8 @@ class Blackjack:
         for p in self.players:
             col = "green1" if p.money>=0 else "red1"
             print(f"\n{p.name}, you have [{col}]{p.money}$[/{col}].")
-            x = input("Place your bet: ")
+            x = input("Place your bet, default is 100$.\n>")
+            if not x: self.bets[p] = 100.0
             try: self.bets[p]=float(x)
             except:
                 print("Invalid bet! Defaulting to 100$.")
@@ -522,14 +531,92 @@ class Blackjack:
         return self.rounds-1
 
 class UNO:
-    def __init__(self, casino: Casino | None = None):
+    def __init__(self, players: Player | list | None = None, drawonce: bool = False, stacking: bool = False, casino: Casino | None = None):
         self.deck = Deck("UNO")
         self.casino = casino
+        self.playerhands = {}
+        self.bets = {}
+        self.skillgains = [10,3]
+        self.pile = []
+        self.drawonce = drawonce
+        self.stacking = stacking
+        self.init_players(players)
+        self.deck.shuffle()
     def __repr__(self):
         return f"UNO({f"casino={self.casino}" if self.casino is not None else ''})"
     def __str__(self):
         return "UNO"
+    def init_players(self, players: Player | list | None = None):
+        self.players = None
+        if players is None:
+            self.players = [Player(),Player()]
+        else:
+            if isinstance(players,Player): players = [players]
+            self.players = players
+        self.playerhands = dict([(player,Hand(player,"UNO")) for player in self.players])
+        self.bets = dict([(player,0) for player in self.players])
+    def reset(self) -> None:
+        """Resets the round, returning all cards to the deck."""
+        for h in self.playerhands.values(): h.discard(self.deck)
+        self.bets = dict([(player,0) for player in self.players])
+        self.deck.shuffle()
+        for i in range(self.deck.size):
+            self.deck[i].visible = True
+    def deal(self) -> bool:
+        """Deals 7 cards to all players."""
+        if self.deck.size < 1+7*len(self.players): return False
+        for h in self.playerhands.values(): h.draw(self.deck,2)
+        self.pile+=self.deck.draw()
+        return True
+    def draw(self, player: Player, n: int = 1) -> bool:
+        """Draws cards in the player's hand."""
+        if self.deck.size < n: return False
+        self.playerhands[player].draw(self.deck,n)
+        return True
+    def available(self, player: Player) -> list:
+        """Returns the list of the player's playable cards."""
+        hand = self.playerhands[player].hand
+        if not self.pile: return hand
+        card = self.pile[-1]
+        res = []
+        for c in hand:
+            if c.type == card.type or c.name == card.name or c.type=='black': res.append(c)
+        return res
+    def special_available(self, player: Player, card: Card) -> list:
+        """Returns a list of the same class of card (eg. Draw 2)."""
+        res = []
+        for c in self.playerhands[player].hand:
+            if c.name == card.name: res.append(c)
+        return res
+    def mainloop(self, players: list | None = None) -> int:
+        """Returns index of winning player from self.players, or -1 for no winner."""
+        self.init_players(players)
+        match = True
+        effect = ''
+        self.deal()
+        while match:
+            for p in self.players:
+                match effect:
+                    case 'skip':
+                        print(f"Player {p.name} skipped!")
+                        effect=''
+                        continue
+                    case '2':
+                        if self.stacking: pass
+                        else:
+                            pass
+                    case _:
+                        pass
+                av = self.available(p)
+
+#______________________________________________________________________
 
 if __name__ == '__main__':
     casino = Casino("Crystal Palace")
-    casino.mainloop()
+    god = Player("YHWH",float("inf"),float("inf"),float("inf"))
+    leo = Player("Leo",1000.0)
+    robin = Player("Robin",500.0,2)
+    casino.register((leo,robin,god))
+    
+    try: casino.mainloop()
+    except: print("Thanks for playing!")
